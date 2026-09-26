@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"time"
@@ -11,20 +12,24 @@ import (
 )
 
 const upstreamGroupKeySQL = "CASE WHEN g.remote_id <> '' THEN 'id:' || g.remote_id ELSE 'name:' || g.name END"
-const upstreamGroupCatalogSQL = `WITH catalog AS (
+const upstreamGroupCatalogSQL = `WITH catalog AS NOT MATERIALIZED (
  SELECT c.id AS connection_id,c.name AS connection_name,c.management_base_url,c.provider,
  CASE WHEN g.remote_id <> '' THEN 'id:' || g.remote_id ELSE 'name:' || g.name END AS remote_key,
  g.remote_id,g.name,g.rate_multiplier,g.source,g.confidence,g.observed_at,g.fresh_until,
- COALESCE(a.tags,'{}'::text[]) AS tags,COALESCE(a.favorite,false) AS favorite,
+ ARRAY(SELECT DISTINCT tag FROM unnest(COALESCE(a.tags,'{}'::text[]) || ARRAY(SELECT v FROM unnest(mr.auto_tags) v WHERE NOT(v=ANY(COALESCE(a.excluded_auto_tags,'{}'::text[]))))) tag ORDER BY tag) AS tags,
+ COALESCE(a.favorite,false) AS favorite,
+ mr.auto_tags,COALESCE(a.excluded_auto_tags,'{}'::text[]) AS excluded_auto_tags,
+ mr.models,mr.coverage AS model_coverage,mr.observed_at AS models_observed_at,mr.status AS model_status,
  ARRAY(SELECT DISTINCT b.account_id FROM upstream_account_bindings b JOIN accounts ac ON ac.id=b.account_id AND ac.deleted_at IS NULL
  WHERE b.connection_id=c.id AND ((b.remote_group_id<>'' AND b.remote_group_id=g.remote_id) OR (b.remote_group_id='' AND b.remote_group_name=g.name))) AS account_ids,
  CASE WHEN c.status IN ('auth_error','degraded','needs_input') THEN 'error'
  WHEN g.fresh_until IS NULL THEN 'unknown' WHEN g.fresh_until <= $1 THEN 'stale' ELSE 'fresh' END AS freshness
  FROM upstream_groups g JOIN upstream_connections c ON c.id=g.connection_id
  LEFT JOIN upstream_group_annotations a ON a.connection_id=c.id AND a.remote_key=CASE WHEN g.remote_id<>'' THEN 'id:' || g.remote_id ELSE 'name:' || g.name END
+ ` + upstreamGroupModelReadJoinSQL + `
 ), filtered AS (
  SELECT * FROM catalog WHERE
- ($2='' OR strpos(lower(name || ' ' || remote_id || ' ' || connection_name || ' ' || management_base_url || ' ' || array_to_string(tags,' ')),lower($2))>0)
+ ($2='' OR strpos(lower(name || ' ' || remote_id || ' ' || connection_name || ' ' || management_base_url || ' ' || array_to_string(tags,' ') || ' ' || array_to_string(models,' ')),lower($2))>0)
  AND (cardinality($3::bigint[])=0 OR connection_id=ANY($3::bigint[]))
  AND ($4='' OR provider=$4) AND ($5='' OR $5=ANY(tags))
  AND ($6='' OR ($6='bound' AND cardinality(account_ids)>0) OR ($6='unbound' AND cardinality(account_ids)=0))
@@ -40,22 +45,6 @@ func (r *upstreamConnectionRepository) ListGroupCatalog(ctx context.Context, p s
 		ids = []int64{}
 	}
 	args := []any{now, p.Search, pq.Array(ids), p.Provider, p.Tag, p.Binding, p.Freshness, p.Favorites, p.MinRate, p.MaxRate}
-	rows, err := client.QueryContext(ctx, upstreamGroupCatalogSQL+"SELECT count(*) FROM filtered", args...)
-	if err != nil {
-		return nil, err
-	}
-	if rows.Next() {
-		err = rows.Scan(&result.Total)
-	}
-	if err == nil {
-		err = rows.Err()
-	}
-	if closeErr := rows.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		return nil, err
-	}
 	order := map[string]string{"name_asc": "name ASC", "name_desc": "name DESC", "rate_asc": "rate_multiplier ASC NULLS LAST", "rate_desc": "rate_multiplier DESC NULLS LAST", "bindings_desc": "cardinality(account_ids) DESC", "observed_desc": "observed_at DESC NULLS LAST", "connection_asc": "connection_name ASC"}[p.Sort]
 	if order == "" {
 		order = "favorite DESC, name ASC"
@@ -63,39 +52,28 @@ func (r *upstreamConnectionRepository) ListGroupCatalog(ctx context.Context, p s
 	if p.GroupByConnection {
 		order = "connection_name ASC,connection_id ASC," + order
 	}
-	query := upstreamGroupCatalogSQL + "SELECT connection_id,connection_name,management_base_url,provider,remote_key,remote_id,name,rate_multiplier,source,confidence,observed_at,fresh_until,tags,favorite,account_ids,freshness FROM filtered ORDER BY " + order + ",connection_id ASC,remote_key ASC LIMIT $11 OFFSET $12"
-	rows, err = client.QueryContext(ctx, query, append(args, p.PageSize, (p.Page-1)*p.PageSize)...)
-	if err != nil {
-		return nil, err
-	}
-	for rows.Next() {
-		var item service.UpstreamGroupCatalogItem
-		err = rows.Scan(&item.ConnectionID, &item.ConnectionName, &item.ManagementBaseURL, &item.Provider, &item.RemoteKey, &item.RemoteID, &item.Name, &item.RateMultiplier, &item.Source, &item.Confidence, &item.ObservedAt, &item.FreshUntil, pq.Array(&item.Tags), &item.Favorite, pq.Array(&item.AccountIDs), &item.Freshness)
-		if err != nil {
-			_ = rows.Close()
-			return nil, err
-		}
-		item.BindingCount = len(item.AccountIDs)
-		result.Items = append(result.Items, item)
-	}
-	err = rows.Err()
-	if closeErr := rows.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		return nil, err
-	}
-	rows, err = client.QueryContext(ctx, "SELECT DISTINCT unnest(tags) AS tag FROM upstream_group_annotations ORDER BY tag")
+	// Count and page share one materialized filtered projection and one database
+	// snapshot. JSON is limited to the requested page, never the full model lists.
+	query := upstreamGroupCatalogSQL + `SELECT (SELECT count(*) FROM filtered),
+ COALESCE((SELECT jsonb_agg(to_jsonb(page)) FROM (
+ SELECT connection_id,connection_name,management_base_url,provider,remote_key,remote_id,name,rate_multiplier,source,confidence,observed_at,fresh_until,
+ tags,favorite,account_ids,cardinality(account_ids) AS binding_count,freshness,auto_tags,excluded_auto_tags,
+ cardinality(models) AS model_count,models[1:3] AS model_preview,model_status,model_coverage,models_observed_at
+ FROM filtered ORDER BY ` + order + `,connection_id ASC,remote_key ASC LIMIT $11 OFFSET $12) page),'[]'::jsonb),
+ ARRAY(SELECT DISTINCT unnest(tags) AS tag FROM catalog ORDER BY tag)`
+	rows, err := client.QueryContext(ctx, query, append(args, p.PageSize, (p.Page-1)*p.PageSize)...)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
-	for rows.Next() {
-		var tag string
-		if err := rows.Scan(&tag); err != nil {
+	if rows.Next() {
+		var page []byte
+		if err = rows.Scan(&result.Total, &page, pq.Array(&result.Tags)); err != nil {
 			return nil, err
 		}
-		result.Tags = append(result.Tags, tag)
+		if err = json.Unmarshal(page, &result.Items); err != nil {
+			return nil, err
+		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -158,11 +136,12 @@ func (r *upstreamConnectionRepository) UpdateGroupAnnotations(ctx context.Contex
 		if remove == nil {
 			remove = []string{}
 		}
-		_, e = tx.Client().ExecContext(ctx, `INSERT INTO upstream_group_annotations(connection_id,remote_key,tags,favorite)
- VALUES($1,$2,ARRAY(SELECT DISTINCT v FROM unnest($3::text[]) v WHERE NOT(v=ANY($4::text[])) ORDER BY v),COALESCE($5,false))
+		_, e = tx.Client().ExecContext(ctx, `INSERT INTO upstream_group_annotations(connection_id,remote_key,tags,favorite,excluded_auto_tags)
+ VALUES($1,$2,ARRAY(SELECT DISTINCT v FROM unnest($3::text[]) v WHERE NOT(v=ANY($4::text[])) ORDER BY v),COALESCE($5,false),CASE WHEN $6 THEN '{}'::text[] ELSE $4::text[] END)
  ON CONFLICT(connection_id,remote_key) DO UPDATE SET
  tags=ARRAY(SELECT DISTINCT v FROM unnest(upstream_group_annotations.tags || $3::text[]) v WHERE NOT(v=ANY($4::text[])) ORDER BY v),
- favorite=COALESCE($5,upstream_group_annotations.favorite),updated_at=NOW()`, g.ConnectionID, g.RemoteKey, pq.Array(add), pq.Array(remove), p.Favorite)
+ excluded_auto_tags=CASE WHEN $6 THEN '{}'::text[] ELSE ARRAY(SELECT DISTINCT v FROM unnest(upstream_group_annotations.excluded_auto_tags || $4::text[]) v WHERE NOT(v=ANY($3::text[])) OR v=ANY($4::text[]) ORDER BY v) END,
+ favorite=COALESCE($5,upstream_group_annotations.favorite),updated_at=NOW()`, g.ConnectionID, g.RemoteKey, pq.Array(add), pq.Array(remove), p.Favorite, p.ResetAutoTags)
 		if e != nil {
 			return e
 		}

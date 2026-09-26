@@ -102,3 +102,17 @@ func TestUpstreamConnectionSyncLeaderLeaseCoversWorstCaseBatch(t *testing.T) {
 	worstCase := time.Duration(waves) * upstreamConnectionSyncPerConnectionTTL
 	require.Greater(t, upstreamConnectionSyncLeaderLockTTL, worstCase)
 }
+
+func TestUpstreamConnectionModelLoopStopsWithService(t *testing.T) {
+	s := NewUpstreamConnectionSyncService(&upstreamConnectionTestRepo{}, nil, &upstreamConnectionSyncLock{}, nil)
+	s.Start()
+	done := make(chan struct{})
+	go func() { s.Stop(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("model worker did not stop")
+	}
+	s.Start()
+	s.Stop()
+}

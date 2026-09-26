@@ -850,6 +850,8 @@ func registerUpstreamConnectionRoutes(admin *gin.RouterGroup, h *handler.Handler
 		connections.GET("/group-catalog", h.Admin.UpstreamConnection.ListGroupCatalog)
 		connections.PATCH("/group-annotations", h.Admin.UpstreamConnection.UpdateGroupAnnotations)
 		connections.GET("/cost-history", h.Admin.UpstreamConnection.GetCostHistory)
+		connections.GET("/:id/group-models", h.Admin.UpstreamConnection.GetGroupModels)
+		connections.POST("/:id/group-models/sync", h.Admin.UpstreamConnection.SyncGroupModels)
 		connections.GET("/:id/usage/today", h.Admin.UpstreamConnection.GetTodayUsage)
 		connections.GET("/:id", h.Admin.UpstreamConnection.Get)
 		connections.PUT("/:id", h.Admin.UpstreamConnection.Update)

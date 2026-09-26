@@ -22,6 +22,7 @@ import (
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 	"github.com/google/uuid"
+	"golang.org/x/sync/singleflight"
 )
 
 var (
@@ -66,34 +67,42 @@ type upstreamConnectionRuntimeReader interface {
 }
 
 type UpstreamConnectionService struct {
-	repo               UpstreamConnectionRepository
-	encryptor          SecretEncryptor
-	cfg                *config.Config
-	inspector          *upstreamConnectionInspector
-	accountRepo        AccountRepository
-	usageReader        upstreamConnectionUsageReader
-	runtimeReader      upstreamConnectionRuntimeReader
-	concurrencyService *ConcurrencyService
-	lockCache          LeaderLockCache
-	db                 *sql.DB
-	instanceID         string
-	now                func() time.Time
-	refreshMu          sync.Mutex
+	repo                UpstreamConnectionRepository
+	encryptor           SecretEncryptor
+	cfg                 *config.Config
+	inspector           *upstreamConnectionInspector
+	accountRepo         AccountRepository
+	usageReader         upstreamConnectionUsageReader
+	runtimeReader       upstreamConnectionRuntimeReader
+	concurrencyService  *ConcurrencyService
+	lockCache           LeaderLockCache
+	db                  *sql.DB
+	instanceID          string
+	now                 func() time.Time
+	refreshMu           sync.Mutex
+	modelFetcher        upstreamGroupModelFetcher
+	modelSyncSlots      chan struct{}
+	modelCatalogCacheMu sync.Mutex
+	modelCatalogCache   map[string]upstreamPublishedCatalogCache
+	modelCatalogFlight  singleflight.Group
 }
 
 func NewUpstreamConnectionService(repo UpstreamConnectionRepository, encryptor SecretEncryptor, cfg *config.Config) *UpstreamConnectionService {
 	return &UpstreamConnectionService{
 		repo: repo, encryptor: encryptor, cfg: cfg,
-		inspector:  newUpstreamConnectionInspector(cfg, nil, nil),
-		instanceID: uuid.NewString(),
-		now:        time.Now,
+		inspector:         newUpstreamConnectionInspector(cfg, nil, nil),
+		instanceID:        uuid.NewString(),
+		now:               time.Now,
+		modelSyncSlots:    make(chan struct{}, 2),
+		modelCatalogCache: make(map[string]upstreamPublishedCatalogCache),
 	}
 }
 
-func ProvideUpstreamConnectionService(repo UpstreamConnectionRepository, encryptor SecretEncryptor, cfg *config.Config, proxyRepo ProxyRepository, accountRepo AccountRepository, usageLogRepo UsageLogRepository, concurrencyService *ConcurrencyService, lockCache LeaderLockCache, db *sql.DB) *UpstreamConnectionService {
+func ProvideUpstreamConnectionService(repo UpstreamConnectionRepository, encryptor SecretEncryptor, cfg *config.Config, proxyRepo ProxyRepository, accountRepo AccountRepository, usageLogRepo UsageLogRepository, concurrencyService *ConcurrencyService, lockCache LeaderLockCache, db *sql.DB, accountTestService *AccountTestService) *UpstreamConnectionService {
 	service := NewUpstreamConnectionService(repo, encryptor, cfg)
 	service.inspector = newUpstreamConnectionInspector(cfg, proxyRepo, nil)
 	service.accountRepo = accountRepo
+	service.modelFetcher = accountTestService
 	if reader, ok := usageLogRepo.(upstreamConnectionUsageReader); ok {
 		service.usageReader = reader
 	}

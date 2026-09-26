@@ -2,13 +2,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import Catalog from '../UpstreamGroupCatalog.vue'
 import type { CatalogGroup } from '@/api/admin/upstreamCatalog'
-const { getGroupCatalog, annotateGroups } = vi.hoisted(() => ({
+const { getGroupCatalog, annotateGroups, syncGroupModels } = vi.hoisted(() => ({
   getGroupCatalog: vi.fn(),
   annotateGroups: vi.fn(),
+  syncGroupModels: vi.fn(),
 }))
 vi.mock('@/api/admin/upstreamCatalog', () => ({
   getGroupCatalog,
   annotateGroups,
+  syncGroupModels,
 }))
 vi.mock('@/utils/format', () => ({ formatDateTime: (value: string) => value }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
@@ -30,6 +32,7 @@ const row: CatalogGroup = {
   account_ids: [],
   binding_count: 0,
   freshness: 'unknown',
+  auto_tags: [], excluded_auto_tags: [], model_count: 0, model_preview: [], model_status: 'unknown', model_coverage: 'unknown', models_observed_at: null,
 }
 function view() {
   return mount(Catalog, {
@@ -41,6 +44,7 @@ function view() {
           template: '<div v-if="show"><slot/><slot name="footer"/></div>',
         },
         Pagination: true,
+        UpstreamGroupModelsDialog: true,
       },
     },
   })
@@ -56,8 +60,41 @@ beforeEach(() => {
     tags: [],
   })
   annotateGroups.mockResolvedValue(undefined)
+  syncGroupModels.mockResolvedValue({ status: 'ready' })
 })
 describe('upstream group catalog', () => {
+  it('links to the upstream website without losing the connection detail action', async () => {
+    const w = view()
+    await flushPromises()
+    const link = w.get('a[aria-label="upstreamWorkspace.website Upstream"]')
+    expect(link.attributes('href')).toBe('https://example.invalid/')
+    expect(link.attributes('target')).toBe('_blank')
+    expect(link.attributes('rel')).toBe('noopener noreferrer')
+    expect(w.get('[data-testid="catalog-row"]').text()).toContain('upstreamWorkspace.modelsNotFetched')
+    expect(syncGroupModels).not.toHaveBeenCalled()
+    w.unmount()
+  })
+  it('removes an automatic tag through the override API', async () => {
+    getGroupCatalog.mockResolvedValue({ items: [{ ...row, tags: ['GPT'], auto_tags: ['GPT'] }], total: 1, tags: ['GPT'] })
+    const w = view()
+    await flushPromises()
+    await w.get('[aria-label="upstreamWorkspace.removeTags GPT Zero group"]').trigger('click')
+    await flushPromises()
+    expect(annotateGroups).toHaveBeenCalledWith([{ connection_id: 1, remote_key: 'id:g' }], { remove_tags: ['GPT'] })
+    w.unmount()
+  })
+  it('only refreshes the explicitly selected groups', async () => {
+    const w = view()
+    await flushPromises()
+    await w.get('[aria-label="upstreamWorkspace.selectRow Zero group"]').setValue(true)
+    const refresh = w.findAll('button').find(button => button.text() === 'upstreamWorkspace.refreshModels')!
+    await refresh.trigger('click')
+    await flushPromises()
+    expect(syncGroupModels).toHaveBeenCalledTimes(1)
+    expect(syncGroupModels.mock.calls[0][0].remote_key).toBe('id:g')
+    expect(w.text()).toContain('upstreamWorkspace.modelsProgress')
+    w.unmount()
+  })
   it('shows unbound zero-rate groups and sends favorites by remote identity', async () => {
     const w = view()
     await flushPromises()

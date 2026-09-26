@@ -84,9 +84,10 @@ func (s *UpstreamConnectionSyncService) Start() {
 		return
 	}
 	s.started = true
-	s.wg.Add(1)
+	s.wg.Add(2)
 	s.mu.Unlock()
 	go s.runLoop()
+	go s.runModelLoop()
 }
 
 func (s *UpstreamConnectionSyncService) Stop() {
@@ -166,4 +167,39 @@ func (s *UpstreamConnectionSyncService) RunDue(ctx context.Context) error {
 		return fmt.Errorf("wait for upstream connection sync: %w", err)
 	}
 	return nil
+}
+
+// Model catalog HTTP calls must not delay wallet or entitlement-rate probes.
+func (s *UpstreamConnectionSyncService) runModelLoop() {
+	defer s.wg.Done()
+	ticker := time.NewTicker(upstreamConnectionSyncCycleInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-s.parentCtx.Done():
+			return
+		case <-ticker.C:
+			if err := s.runModelCycle(s.parentCtx); err != nil {
+				logger.LegacyPrintf("service.upstream_connection_sync", "model_sync_failed: err=%v", err)
+			}
+		}
+	}
+}
+
+func (s *UpstreamConnectionSyncService) runModelCycle(ctx context.Context) error {
+	if s.connectionService == nil {
+		return nil
+	}
+	release, acquired, err := tryAcquireSingletonLeaderLock(ctx, s.lockCache, s.db,
+		"upstream:connections:v2:models:leader", s.instanceID, 3*time.Minute)
+	if err != nil {
+		return err
+	}
+	if !acquired {
+		return nil
+	}
+	defer release()
+	ctx, cancel := context.WithTimeout(ctx, 105*time.Second)
+	defer cancel()
+	return s.connectionService.SyncDueGroupModels(ctx)
 }

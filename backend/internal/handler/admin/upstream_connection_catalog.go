@@ -72,3 +72,38 @@ func (h *UpstreamConnectionHandler) GetCostHistory(c *gin.Context) {
 	}
 	response.Success(c, result)
 }
+
+func (h *UpstreamConnectionHandler) GetGroupModels(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid connection ID")
+		return
+	}
+	result, err := h.service.GetGroupModels(c.Request.Context(), service.UpstreamGroupReference{ConnectionID: id, RemoteKey: c.Query("remote_key")})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, result)
+}
+
+func (h *UpstreamConnectionHandler) SyncGroupModels(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid connection ID")
+		return
+	}
+	var request struct {
+		RemoteKey string `json:"remote_key"`
+	}
+	if err := c.ShouldBindJSON(&request); err != nil {
+		response.BadRequest(c, "Invalid model sync request")
+		return
+	}
+	result, err := h.service.SyncGroupModels(c.Request.Context(), service.UpstreamGroupReference{ConnectionID: id, RemoteKey: request.RemoteKey}, true)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, result)
+}

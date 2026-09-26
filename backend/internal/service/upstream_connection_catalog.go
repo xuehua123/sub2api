@@ -38,6 +38,13 @@ type UpstreamGroupCatalogItem struct {
 	AccountIDs        []int64    `json:"account_ids"`
 	BindingCount      int        `json:"binding_count"`
 	Freshness         string     `json:"freshness"`
+	AutoTags          []string   `json:"auto_tags"`
+	ExcludedAutoTags  []string   `json:"excluded_auto_tags"`
+	ModelCount        int        `json:"model_count"`
+	ModelPreview      []string   `json:"model_preview"`
+	ModelStatus       string     `json:"model_status"`
+	ModelCoverage     string     `json:"model_coverage"`
+	ModelsObservedAt  *time.Time `json:"models_observed_at"`
 }
 type UpstreamGroupCatalogResult struct {
 	Items    []UpstreamGroupCatalogItem `json:"items"`
@@ -51,10 +58,11 @@ type UpstreamGroupReference struct {
 	RemoteKey    string `json:"remote_key"`
 }
 type UpstreamGroupAnnotationUpdate struct {
-	Groups     []UpstreamGroupReference `json:"groups"`
-	AddTags    []string                 `json:"add_tags"`
-	RemoveTags []string                 `json:"remove_tags"`
-	Favorite   *bool                    `json:"favorite"`
+	Groups        []UpstreamGroupReference `json:"groups"`
+	AddTags       []string                 `json:"add_tags"`
+	RemoveTags    []string                 `json:"remove_tags"`
+	Favorite      *bool                    `json:"favorite"`
+	ResetAutoTags bool                     `json:"reset_auto_tags"`
 }
 type UpstreamConnectionCostItem struct {
 	ConnectionID int64   `json:"connection_id"`

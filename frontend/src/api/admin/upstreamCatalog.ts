@@ -17,6 +17,13 @@ export interface CatalogGroup {
   account_ids: number[]
   binding_count: number
   freshness: 'fresh' | 'stale' | 'unknown' | 'error'
+  auto_tags: string[]
+  excluded_auto_tags: string[]
+  model_count: number
+  model_preview: string[]
+  model_status: ModelSnapshot['status']
+  model_coverage: ModelSnapshot['coverage']
+  models_observed_at: string | null
 }
 export interface CatalogFilters {
   page: number
@@ -52,12 +59,36 @@ export async function getGroupCatalog(
 }
 export async function annotateGroups(
   groups: Pick<CatalogGroup, 'connection_id' | 'remote_key'>[],
-  update: { add_tags?: string[]; remove_tags?: string[]; favorite?: boolean },
+  update: { add_tags?: string[]; remove_tags?: string[]; favorite?: boolean; reset_auto_tags?: boolean },
 ): Promise<void> {
   await apiClient.patch('/admin/upstream-connections/group-annotations', {
     groups,
     ...update,
   })
+}
+export interface ModelSnapshot {
+  models: string[]
+  auto_tags: string[]
+  source: string
+  coverage: 'unknown' | 'published' | 'bound_keys'
+  status: 'unknown' | 'ready' | 'partial' | 'error' | 'stale' | 'syncing' | 'pending'
+  source_count?: number
+  ready_source_count?: number
+  pending_source_count?: number
+  failed_source_count?: number
+  stale_source_count?: number
+  refresh_in_progress?: boolean
+  error_code: string
+  observed_at: string | null
+  fresh_until: string | null
+}
+export async function getGroupModels(group: Pick<CatalogGroup, 'connection_id' | 'remote_key'>, signal?: AbortSignal): Promise<ModelSnapshot> {
+  const { data } = await apiClient.get<ModelSnapshot>(`/admin/upstream-connections/${group.connection_id}/group-models`, { params: { remote_key: group.remote_key }, signal })
+  return data
+}
+export async function syncGroupModels(group: Pick<CatalogGroup, 'connection_id' | 'remote_key'>, signal?: AbortSignal): Promise<ModelSnapshot> {
+  const { data } = await apiClient.post<ModelSnapshot>(`/admin/upstream-connections/${group.connection_id}/group-models/sync`, { remote_key: group.remote_key }, { signal, timeout: 60000 })
+  return data
 }
 export interface CostHistory {
   daily: { date: string; account_cost: number; requests: number }[]

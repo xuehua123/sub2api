@@ -62,7 +62,7 @@
       >
         <option value="">{{ t('upstreamWorkspace.allTags') }}</option>
         <option v-for="tag in result.tags" :key="tag" :value="tag">
-          {{ tag }}
+          {{ tagLabel(tag) }}
         </option>
       </select>
       <select
@@ -157,6 +157,7 @@
       </div>
     </div>
     <p class="text-xs text-gray-500">{{ t('upstreamWorkspace.scope') }}</p>
+    <p v-if="batchMessage" role="status" class="text-sm text-gray-600 dark:text-gray-300">{{ batchMessage }}</p>
     <div
       v-if="selected.length"
       class="flex flex-wrap items-center gap-3 bg-primary-50 px-3 py-2 dark:bg-primary-900/20"
@@ -166,17 +167,23 @@
       }}</span>
       <button
         class="btn btn-secondary btn-sm"
-        :disabled="saving"
+        :disabled="saving || batchSyncing"
         @click="openTags('add')"
       >
         {{ t('upstreamWorkspace.addTags') }}
       </button>
       <button
         class="btn btn-secondary btn-sm"
-        :disabled="saving"
+        :disabled="saving || batchSyncing"
         @click="openTags('remove')"
       >
         {{ t('upstreamWorkspace.removeTags') }}
+      </button>
+      <button class="btn btn-secondary btn-sm" :disabled="saving || batchSyncing" @click="refreshSelectedModels">
+        <Icon name="refresh" size="sm" :class="batchSyncing ? 'animate-spin' : ''" />{{ t('upstreamWorkspace.refreshModels') }}
+      </button>
+      <button class="btn btn-secondary btn-sm" :disabled="saving || batchSyncing" @click="resetAutoTags">
+        {{ t('upstreamWorkspace.resetAutoTags') }}
       </button>
     </div>
     <p v-if="error" role="alert" class="text-sm text-red-600">
@@ -189,9 +196,9 @@
       {{ t('upstreamWorkspace.busy') }}
     </div>
     <div v-else-if="!error" class="overflow-x-auto bg-white dark:bg-dark-900">
-      <table class="w-full min-w-[900px] text-sm">
+      <table class="w-full min-w-[1180px] text-sm">
         <thead
-          class="bg-gray-50 text-left text-xs text-gray-500 dark:bg-dark-800"
+          class="whitespace-nowrap bg-gray-50 text-left text-xs text-gray-500 dark:bg-dark-800"
         >
           <tr>
             <th class="w-10 p-3">
@@ -210,6 +217,7 @@
             <th class="p-3">{{ t('upstreamWorkspace.name') }}</th>
             <th class="p-3">{{ t('upstreamWorkspace.upstream') }}</th>
             <th class="p-3">{{ t('upstreamWorkspace.tags') }}</th>
+            <th class="p-3">{{ t('upstreamWorkspace.models') }}</th>
             <th class="p-3 text-right">{{ t('upstreamWorkspace.rate') }}</th>
             <th class="p-3 text-right">
               {{ t('upstreamWorkspace.accounts') }}
@@ -228,7 +236,7 @@
               "
               class="bg-gray-50 dark:bg-dark-800"
             >
-              <td colspan="8" class="px-3 py-2 font-medium">
+              <td colspan="9" class="px-3 py-2 font-medium">
                 {{ row.connection_name }}
                 <span class="ml-2 text-xs font-normal text-gray-500">{{
                   row.provider
@@ -288,14 +296,18 @@
                     row.provider
                   }}</span>
                 </button>
+                <a v-if="upstreamWebsite(row.management_base_url)" :href="upstreamWebsite(row.management_base_url)" target="_blank" rel="noopener noreferrer" class="mt-1 inline-flex items-center gap-1 text-xs text-primary-600" :title="upstreamWebsite(row.management_base_url)" :aria-label="t('upstreamWorkspace.website') + ' ' + row.connection_name">
+                  {{ t('upstreamWorkspace.website') }}<Icon name="externalLink" size="sm" />
+                </a>
               </td>
               <td class="max-w-60 p-3">
                 <div class="flex flex-wrap items-center gap-1">
                   <span
                     v-for="tag in row.tags"
                     :key="tag"
-                    class="rounded bg-primary-50 px-2 py-0.5 text-xs text-primary-700 dark:bg-primary-900/20 dark:text-primary-300"
-                    >{{ tag }}</span
+                    class="inline-flex items-center gap-1 rounded bg-primary-50 px-2 py-0.5 text-xs text-primary-700 dark:bg-primary-900/20 dark:text-primary-300"
+                    :title="t(row.auto_tags?.includes(tag) ? 'upstreamWorkspace.autoTag' : 'upstreamWorkspace.manualTag')"
+                    >{{ tagLabel(tag) }}<button :disabled="saving" :title="t('upstreamWorkspace.removeTags') + ' ' + tagLabel(tag)" :aria-label="t('upstreamWorkspace.removeTags') + ' ' + tag + ' ' + row.name" @click="removeTag(row, tag)"><Icon name="x" size="xs" /></button></span
                   ><button
                     :title="t('upstreamWorkspace.addTags')"
                     :aria-label="
@@ -307,6 +319,16 @@
                     <Icon name="plus" size="sm" />
                   </button>
                 </div>
+              </td>
+              <td class="max-w-64 p-3">
+                <button class="text-left text-primary-700 dark:text-primary-300" :aria-label="t('upstreamWorkspace.models') + ' ' + row.name" @click="modelGroup = row">
+                  {{ row.models_observed_at ? t('upstreamWorkspace.modelCount', { count: row.model_count }) : t('upstreamWorkspace.modelsNotFetched') }}
+                </button>
+                <p v-if="row.model_preview?.length" class="mt-1 max-w-56 truncate text-xs text-gray-500" :title="row.model_preview.join(', ')">{{ row.model_preview.join(', ') }}</p>
+                <p class="mt-1 text-xs" :class="['error', 'partial', 'stale'].includes(row.model_status) ? 'text-amber-600' : 'text-gray-400'">
+                  {{ t('upstreamWorkspace.modelStatus.' + (row.model_status || 'unknown')) }}
+                  <span v-if="row.models_observed_at"> · {{ t('upstreamWorkspace.modelCoverage.' + row.model_coverage) }}</span>
+                </p>
               </td>
               <td
                 class="p-3 text-right font-medium tabular-nums"
@@ -347,7 +369,7 @@
             </tr>
           </template>
           <tr v-if="!result.items.length">
-            <td colspan="8" class="py-12 text-center text-gray-500">
+            <td colspan="9" class="py-12 text-center text-gray-500">
               {{ t('upstreamWorkspace.noGroups') }}
             </td>
           </tr>
@@ -362,6 +384,7 @@
       @update:page="changePage"
       @update:page-size="changePageSize"
     />
+    <UpstreamGroupModelsDialog :group="modelGroup" @close="modelGroup = null" @updated="load" />
     <BaseDialog
       :show="tagDialog"
       :title="
@@ -407,10 +430,13 @@ import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
+import UpstreamGroupModelsDialog from './UpstreamGroupModelsDialog.vue'
+import { upstreamWebsite } from '@/utils/upstreamCatalog'
 import { formatDateTime } from '@/utils/format'
 import {
   getGroupCatalog,
   annotateGroups,
+  syncGroupModels,
   type CatalogGroup,
   type CatalogResult,
 } from '@/api/admin/upstreamCatalog'
@@ -420,6 +446,9 @@ const props = defineProps<{
 }>()
 defineEmits<{ details: [id: number] }>()
 const { t } = useI18n()
+function tagLabel(tag: string) {
+  return ['Text', 'Image', 'Video', 'Audio', 'Embedding', 'Rerank'].includes(tag) ? t('upstreamWorkspace.modelTags.' + tag) : tag
+}
 const filters = reactive({
   search: '',
   ids: [] as number[],
@@ -495,6 +524,9 @@ const tagDialog = ref(false),
   tagInput = ref(''),
   tagMode = ref<'add' | 'remove'>('add'),
   tagError = ref('')
+const modelGroup = ref<CatalogGroup | null>(null)
+const batchSyncing = ref(false), batchMessage = ref('')
+let batchController: AbortController | undefined
 let controller: AbortController | undefined,
   timer: ReturnType<typeof setTimeout> | undefined,
   generation = 0
@@ -592,6 +624,42 @@ async function favorite(row: CatalogGroup) {
     saving.value = false
   }
 }
+async function removeTag(row: CatalogGroup, tag: string) {
+  saving.value = true
+  try { await annotateGroups([{ connection_id: row.connection_id, remote_key: row.remote_key }], { remove_tags: [tag] }); await load() }
+  catch { error.value = t('upstreamWorkspace.annotationError') }
+  finally { saving.value = false }
+}
+async function resetAutoTags() {
+  const groups = result.value.items.filter(row => selected.value.includes(keyOf(row))).map(row => ({ connection_id: row.connection_id, remote_key: row.remote_key }))
+  saving.value = true
+  try { await annotateGroups(groups, { reset_auto_tags: true }); await load() }
+  catch { error.value = t('upstreamWorkspace.annotationError') }
+  finally { saving.value = false }
+}
+async function refreshSelectedModels() {
+  if (batchSyncing.value) return
+  const groups = result.value.items.filter(row => selected.value.includes(keyOf(row)))
+  batchController = new AbortController()
+  const signal = batchController.signal
+  batchSyncing.value = true
+  let done = 0, failed = 0, pending = 0
+  for (const group of groups) {
+    if (signal.aborted) break
+    batchMessage.value = t('upstreamWorkspace.modelsProgress', { done, total: groups.length, failed, pending })
+    try {
+      const snapshot = await syncGroupModels(group, signal)
+      if (snapshot.status === 'pending' || snapshot.status === 'syncing') pending++
+      else if (snapshot.status !== 'ready') failed++
+    } catch { if (!signal.aborted) failed++ }
+    done++
+  }
+  batchSyncing.value = false
+  if (!signal.aborted) {
+    batchMessage.value = t('upstreamWorkspace.modelsProgress', { done, total: groups.length, failed, pending })
+    await load()
+  }
+}
 watch(filters, () => {
   try {
     localStorage.setItem('upstream-catalog-filters', JSON.stringify(filters))
@@ -619,5 +687,6 @@ onBeforeUnmount(() => {
   generation++
   clearTimeout(timer)
   controller?.abort()
+  batchController?.abort()
 })
 </script>

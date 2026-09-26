@@ -198,6 +198,12 @@ func (s *AccountTestService) FetchUpstreamSupportedModels(ctx context.Context, a
 	return models, err
 }
 
+// Group snapshots must be able to replace a previously nonempty list with an
+// explicitly empty upstream catalog. Existing account-sync behavior is unchanged.
+func (s *AccountTestService) FetchUpstreamGroupSupportedModels(ctx context.Context, account *Account) ([]string, error) {
+	return s.fetchUpstreamGroupModelPages(ctx, account)
+}
+
 // SyncUpstreamModelCatalog fetches the account's live model list, enriches
 // missing capability fields from the provider registry used by the upstream,
 // and persists a normalized account snapshot when complete metadata is available.
