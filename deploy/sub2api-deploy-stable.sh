@@ -14,7 +14,7 @@ readonly COMPOSE_ENV_FILE="${DEPLOY_DIR}/sub2api.env"
 readonly NGINX_CONFIG="/etc/nginx/snippets/sub2api-active-upstream.conf"
 readonly CUTOVER_SCRIPT="/usr/local/sbin/sub2api-nginx-bluegreen-cutover"
 readonly CUTOVER_SCRIPT_PROTOCOL="sub2api-nginx-bluegreen-cutover-v2"
-readonly CUTOVER_SCRIPT_SHA256="1d4f8b7b66d09e6c6968fc20173e58d46ed8967ddcc92eddf164b005e408b1e4"
+readonly CUTOVER_SCRIPT_SHA256="7115ee1e7e4e5d546cffc1d9c1fd50f9feaca3839e26b3a605c8f78c927d9c53"
 readonly CUTOVER_OWNER_UID="0"
 readonly CUTOVER_OWNER_GID="0"
 readonly LOCK_FILE="${STATE_DIR}/stable-deploy.lock"
@@ -927,7 +927,13 @@ attempt_safe_cutover_rollback() {
 
   if container_healthy_on_port "$active_color" &&
     nginx_routes_to_only_slot "$active_upstream" "$target_upstream"; then
-    if reload_nginx_verified && public_health_ok && remove_target_container_verified; then
+    # The helper may have restored the route but left a target with live
+    # draining workers. Public health alone never authorizes deleting that slot.
+    if [[ "$(docker inspect --format '{{.State.Running}}' "$target_container" 2>/dev/null || true)" != false ]]; then
+      echo "Rollback target is still running or cannot be inspected; preserve it until drain is verified" >&2
+      return 1
+    fi
+    if public_health_ok && remove_target_container_verified; then
       return 0
     fi
     return 1

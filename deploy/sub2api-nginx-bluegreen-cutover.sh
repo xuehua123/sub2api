@@ -11,6 +11,11 @@ readonly STATE_OWNER_GID="0"
 readonly LOCK_FILE="${STATE_DIR}/nginx-bluegreen-cutover.lock"
 readonly PUBLIC_HEALTH_RESOLVE="api.wenrugouai.com:443:40.160.58.167"
 readonly NGINX_PID_FILE="/run/nginx.pid"
+readonly DRAIN_ATTEMPTS=120
+readonly DRAIN_INTERVAL_SECONDS=5
+
+draining_master_pid=""
+draining_worker_pids=""
 
 if [[ "${1:-}" == --protocol ]]; then
   [[ "$#" -eq 1 ]] || exit 2
@@ -44,6 +49,8 @@ if [[ -L "$LOCK_FILE" || ! -f "$LOCK_FILE" ]] ||
   echo "Nginx cutover lock must be root-owned, non-symlink, and mode 0600: $LOCK_FILE" >&2
   exit 1
 fi
+
+command -v ss >/dev/null 2>&1 || { echo "Required connection inspector is missing: ss" >&2; exit 1; }
 
 active_container=$1
 target_container=$2
@@ -160,6 +167,8 @@ reload_nginx_verified() {
     echo "No Nginx worker exists before reload" >&2
     return 1
   }
+  draining_master_pid="$master_pid"
+  draining_worker_pids="$workers_before"
   nginx -s reload || return 1
   for ((attempt = 0; attempt < 10; attempt++)); do
     current_master_pid="$(tr -d '[:space:]' < "$NGINX_PID_FILE")"
@@ -177,6 +186,42 @@ reload_nginx_verified() {
     sleep 1
   done
   echo "Nginx reload did not create a new worker" >&2
+  return 1
+}
+
+# A new worker does not retire the previous generation: HTTP/2, SSE and
+# WebSocket connections can still send requests through old workers after reload.
+# Never stop either slot until both its worker generation and sockets have drained.
+wait_for_slot_drain() {
+  local upstream=$1
+  local current_workers worker sockets attempt
+  local workers_pending
+  for ((attempt = 0; attempt < DRAIN_ATTEMPTS; attempt++)); do
+    [[ "$(tr -d '[:space:]' < "$NGINX_PID_FILE")" == "$draining_master_pid" ]] || {
+      echo "Nginx master changed while draining; keeping both slots alive" >&2
+      return 1
+    }
+    current_workers="$(pgrep -P "$draining_master_pid")" || {
+      echo "Cannot inspect Nginx workers while draining; keeping both slots alive" >&2
+      return 1
+    }
+    workers_pending=false
+    while IFS= read -r worker; do
+      [[ -n "$worker" ]] || continue
+      if grep -Fxq -- "$worker" <<< "$current_workers"; then
+        workers_pending=true
+      fi
+    done <<< "$draining_worker_pids"
+    sockets="$(ss -Htn state established "( src = $upstream or dst = $upstream )")" || {
+      echo "Cannot inspect slot connections; keeping both slots alive" >&2
+      return 1
+    }
+    if [[ "$workers_pending" == false && -z "$sockets" ]]; then
+      return 0
+    fi
+    sleep "$DRAIN_INTERVAL_SECONDS"
+  done
+  echo "Drain window exceeded for $upstream; keeping both slots alive" >&2
   return 1
 }
 
@@ -281,10 +326,10 @@ rollback_cutover() {
 
   if [[ "$rollback_reload_verified" == true ]] &&
     container_healthy "$active_container" "$active_upstream" && public_health_ok; then
-    if remove_target_container_verified; then
+    if wait_for_slot_drain "$target_upstream" && remove_target_container_verified; then
       echo "Cutover failed and the previous slot was restored: $active_container" >&2
     else
-      echo "Cutover failed and automatic rollback could not remove the target; operator intervention is required" >&2
+      echo "Cutover failed and automatic rollback could not drain or remove the target; operator intervention is required" >&2
     fi
   else
     echo "Cutover failed and automatic rollback could not be verified; operator intervention is required" >&2
@@ -314,8 +359,8 @@ if [[ "$public_health_verified" != true ]]; then
 fi
 
 if [[ "$rollback_policy" != forbid ]]; then
-  # Nginx no longer assigns new connections to the old slot. Docker sends
-  # SIGTERM and gives the server time to drain long-lived SSE/WebSocket workers.
+  wait_for_slot_drain "$active_upstream"
+  # All previous workers and slot sockets are gone before sending SIGTERM.
   old_stop_started=true
   docker stop --time 120 "$active_container" >/dev/null
   if [[ "$(docker inspect --format '{{.State.Running}}' "$active_container" 2>/dev/null || true)" == true ]]; then
