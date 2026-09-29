@@ -294,6 +294,7 @@ export interface TopUserPaymentStats {
 }
 
 export interface DashboardStats {
+  pending_orders: number
   today_amount: CurrencyAmounts
   total_amount: CurrencyAmounts
   today_count: number

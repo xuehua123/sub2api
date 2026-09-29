@@ -1,27 +1,12 @@
 <template>
   <AppLayout>
     <div class="space-y-6">
-      <!-- Header with Day Switcher -->
-      <div class="flex items-center justify-end">
-        <div class="flex items-center gap-2">
-          <div class="flex rounded-lg border border-gray-200 dark:border-dark-600">
-            <button
-              v-for="d in DAYS_OPTIONS"
-              :key="d"
-              type="button"
-              class="px-3 py-1.5 text-xs font-medium transition-colors first:rounded-l-lg last:rounded-r-lg"
-              :class="days === d
-                ? 'bg-primary-600 text-white'
-                : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-dark-700'"
-              @click="days = d"
-            >
-              {{ d }}{{ t('payment.admin.daySuffix') }}
-            </button>
-          </div>
-          <button @click="loadDashboard" :disabled="loading" class="btn btn-secondary" :title="t('common.refresh')">
+      <div class="flex flex-wrap items-center justify-end gap-2">
+          <span class="text-xs text-gray-500">{{ range.start_date }} ~ {{ range.end_date }}</span>
+          <DateRangePicker :start-date="range.start_date" :end-date="range.end_date" calendar-only align="right" :max-date="dateString(new Date())" :max-days="366" @change="changeRange" />
+          <button @click="refresh" :disabled="loading" class="btn btn-secondary" :title="t('common.refresh')" :aria-label="t('common.refresh')">
             <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
           </button>
-        </div>
       </div>
 
       <!-- Dashboard Content -->
@@ -66,13 +51,13 @@
           </div>
         </div>
       </template>
-      <UsageProfitChart :days="days" />
+      <UsageProfitChart :range="range" :refresh-key="refreshKey" />
     </div>
   </AppLayout>
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
+import { ref, watch, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { adminPaymentAPI } from '@/api/admin/payment'
@@ -84,16 +69,37 @@ import Icon from '@/components/icons/Icon.vue'
 import OrderStatsCards from '@/components/admin/payment/OrderStatsCards.vue'
 import DailyRevenueChart from '@/components/admin/payment/DailyRevenueChart.vue'
 import UsageProfitChart from '@/components/admin/payment/UsageProfitChart.vue'
+import DateRangePicker from '@/components/common/DateRangePicker.vue'
 
 const { t } = useI18n()
 const appStore = useAppStore()
 
-const DAYS_OPTIONS = [7, 30, 90] as const
-const days = ref<number>(30)
+const dateString = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+const today = new Date()
+const start = new Date(today)
+start.setDate(start.getDate() - 29)
+const range = ref({ start_date: dateString(start), end_date: dateString(today) })
+const refreshKey = ref(0)
+function changeRange(value: { startDate: string; endDate: string }) {
+  const from = new Date(value.startDate + 'T00:00:00')
+  const to = new Date(value.endDate + 'T00:00:00')
+  const limit = new Date(from)
+  limit.setDate(limit.getDate() + 365)
+  if (!Number.isFinite(from.getTime()) || !Number.isFinite(to.getTime()) || from > to || to > limit || value.endDate > dateString(new Date())) {
+    appStore.showError(t('payment.admin.invalidDateRange'))
+    return
+  }
+  range.value = { start_date: value.startDate, end_date: value.endDate }
+}
+function refresh() {
+  refreshKey.value++
+  void loadDashboard()
+}
 const loading = ref(false)
 const stats = ref<DashboardStats | null>(null)
 let generation = 0
-onBeforeUnmount(() => { generation++ })
+let controller: AbortController | undefined
+onBeforeUnmount(() => { generation++; controller?.abort() })
 
 function methodColor(type: string): string {
   const c: Record<string, string> = {
@@ -129,9 +135,12 @@ function formatMoney(currency: string, amount: number): string {
 
 async function loadDashboard() {
   const current = ++generation
+  controller?.abort()
+  controller = new AbortController()
   loading.value = true
+  stats.value = null
   try {
-    const res = await adminPaymentAPI.getDashboard(days.value)
+    const res = await adminPaymentAPI.getDashboard(range.value, controller.signal)
     if (current === generation) stats.value = res.data
   } catch (err: unknown) {
     if (current === generation) appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error')))
@@ -140,6 +149,5 @@ async function loadDashboard() {
   }
 }
 
-watch(days, () => loadDashboard())
-onMounted(() => loadDashboard())
+watch(range, () => loadDashboard(), { immediate: true })
 </script>

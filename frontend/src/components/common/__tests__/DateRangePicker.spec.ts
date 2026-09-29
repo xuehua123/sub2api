@@ -35,6 +35,26 @@ const formatLocalDate = (date: Date): string => {
 }
 
 describe('DateRangePicker', () => {
+  it('supports calendar presets and blocks invalid custom payment ranges', async () => {
+    const wrapper = mount(DateRangePicker, {
+      props: { startDate: '2026-08-01', endDate: '2026-08-31', calendarOnly: true, maxDate: '2026-09-28', maxDays: 366 },
+      global: { stubs: { Icon: true } }
+    })
+    await wrapper.find('.date-picker-trigger').trigger('click')
+    expect(wrapper.text()).toContain('This Month')
+    expect(wrapper.text()).toContain('Last Month')
+    expect(wrapper.text()).not.toContain('Last 24 Hours')
+    const inputs = wrapper.findAll('input')
+    await inputs[0].setValue('2024-01-01')
+    expect(wrapper.find('.date-picker-apply').attributes('disabled')).toBeDefined()
+    await inputs[0].setValue('2026-08-01')
+    await inputs[1].setValue('2026-09-29')
+    expect(wrapper.find('.date-picker-apply').attributes('disabled')).toBeDefined()
+    await inputs[1].setValue('2026-08-31')
+    await wrapper.find('.date-picker-apply').trigger('click')
+    expect(wrapper.emitted('change')?.[0]).toEqual([expect.objectContaining({ startDate: '2026-08-01', endDate: '2026-08-31' })])
+    wrapper.unmount()
+  })
   it('uses last 24 hours as the default recognized preset', () => {
     const now = new Date()
     const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000)
@@ -93,5 +113,25 @@ describe('DateRangePicker', () => {
         preset: 'last24Hours'
       }
     ])
+  })
+
+  it('does not show an unapplied draft after dismissing the menu', async () => {
+    const wrapper = mount(DateRangePicker, {
+      props: { startDate: '2026-08-02', endDate: '2026-08-31', calendarOnly: true },
+      global: { stubs: { Icon: true } }
+    })
+
+    const trigger = wrapper.find('.date-picker-trigger')
+    await trigger.trigger('click')
+    const lastMonth = wrapper.findAll('.date-picker-preset').find((node) => node.text().includes('Last Month'))
+    await lastMonth!.trigger('click')
+    expect(wrapper.find('.date-picker-value').text()).toContain('Aug')
+    expect(wrapper.emitted('change')).toBeUndefined()
+
+    document.body.click()
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.date-picker-value').text()).toContain('Aug')
+    expect(wrapper.find('.date-picker-value').text()).not.toContain('Last Month')
+    expect(wrapper.emitted('change')).toBeUndefined()
   })
 })

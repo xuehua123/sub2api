@@ -1072,9 +1072,10 @@ func ProvideBalanceNotifyService(emailService *EmailService, settingRepo Setting
 }
 
 // ProvidePaymentService creates PaymentService and attaches referral and notification delivery collaborators.
-func ProvidePaymentService(entClient *dbent.Client, registry *payment.Registry, loadBalancer payment.LoadBalancer, redeemService *RedeemService, subscriptionSvc *SubscriptionService, subscriptionEntitlementSvc *SubscriptionEntitlementService, settingSvc *SettingService, configService *PaymentConfigService, userRepo UserRepository, groupRepo GroupRepository, referralRewardSvc *ReferralRewardService, referralRefundSvc *ReferralRefundService, affiliateService *AffiliateService, notificationEmailService *NotificationEmailService) *PaymentService {
+func ProvidePaymentService(entClient *dbent.Client, registry *payment.Registry, loadBalancer payment.LoadBalancer, redeemService *RedeemService, subscriptionSvc *SubscriptionService, subscriptionEntitlementSvc *SubscriptionEntitlementService, settingSvc *SettingService, configService *PaymentConfigService, userRepo UserRepository, groupRepo GroupRepository, referralRewardSvc *ReferralRewardService, referralRefundSvc *ReferralRefundService, affiliateService *AffiliateService, notificationEmailService *NotificationEmailService, dashboardRepo PaymentDashboardRepository) *PaymentService {
 	svc := NewPaymentService(entClient, registry, loadBalancer, redeemService, subscriptionSvc, subscriptionEntitlementSvc, settingSvc, configService, userRepo, groupRepo, referralRewardSvc, referralRefundSvc, affiliateService)
 	svc.SetNotificationEmailService(notificationEmailService)
+	svc.SetDashboardRepository(dashboardRepo)
 	return svc
 }
 

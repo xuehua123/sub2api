@@ -64,3 +64,15 @@ func TestPaymentProfitWithMissingSettlementDoesNotInventProfit(t *testing.T) {
 	require.Nil(t, result.Daily[0].GrossProfit)
 	require.Equal(t, int64(1), result.UncertainCount)
 }
+
+func TestPaymentUsageProfitCustomRange(t *testing.T) {
+	r := &usageProfitTestReader{}
+	s := NewUpstreamConnectionService(r, nil, nil)
+	s.now = func() time.Time { return time.Date(2026, 9, 28, 12, 0, 0, 0, timezone.Location()) }
+	result, err := s.GetPaymentUsageProfit(context.Background(), 30, "2026-09-24", "2026-09-25")
+	require.NoError(t, err)
+	require.Len(t, result.Daily, 2)
+	require.Equal(t, "2026-09-26", r.end.Format(time.DateOnly))
+	require.Equal(t, "2026-09-24", result.Daily[0].Date)
+	require.Equal(t, 12.0, result.TotalRevenue)
+}

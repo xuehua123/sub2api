@@ -32,11 +32,14 @@ func NewPaymentHandler(paymentService *service.PaymentService, configService *se
 func (h *PaymentHandler) GetDashboard(c *gin.Context) {
 	days := 30
 	if d := c.Query("days"); d != "" {
-		if v, err := strconv.Atoi(d); err == nil && v > 0 {
+		if v, err := strconv.Atoi(d); err == nil && v > 0 && v <= 366 {
 			days = v
+		} else {
+			response.BadRequest(c, "days must be between 1 and 366")
+			return
 		}
 	}
-	stats, err := h.paymentService.GetDashboardStats(c.Request.Context(), days)
+	stats, err := h.paymentService.GetDashboardStats(c.Request.Context(), days, c.Query("start_date"), c.Query("end_date"))
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

@@ -21,11 +21,11 @@
     </button>
 
     <Transition name="date-picker-dropdown">
-      <div v-if="isOpen" class="date-picker-dropdown">
+      <div v-if="isOpen" class="date-picker-dropdown" :style="align === 'right' ? { left: 'auto', right: '0' } : undefined">
         <!-- Quick presets -->
         <div class="date-picker-presets">
           <button
-            v-for="preset in presets"
+            v-for="preset in visiblePresets"
             :key="preset.value"
             @click="selectPreset(preset)"
             :class="['date-picker-preset', isPresetActive(preset) && 'date-picker-preset-active']"
@@ -43,7 +43,7 @@
             <input
               type="date"
               v-model="localStartDate"
-              :max="localEndDate || tomorrow"
+              :max="localEndDate || maxDate || tomorrow"
               class="date-picker-input"
               @change="onDateChange"
             />
@@ -57,7 +57,7 @@
               type="date"
               v-model="localEndDate"
               :min="localStartDate"
-              :max="tomorrow"
+              :max="maxDate || tomorrow"
               class="date-picker-input"
               @change="onDateChange"
             />
@@ -66,7 +66,7 @@
 
         <!-- Apply button -->
         <div class="date-picker-actions">
-          <button @click="apply" class="date-picker-apply">
+          <button @click="apply" :disabled="!validRange" class="date-picker-apply disabled:cursor-not-allowed disabled:opacity-50">
             {{ t('dates.apply') }}
           </button>
         </div>
@@ -89,6 +89,10 @@ interface DatePreset {
 interface Props {
   startDate: string
   endDate: string
+  calendarOnly?: boolean
+  align?: 'left' | 'right'
+  maxDate?: string
+  maxDays?: number
 }
 
 interface Emits {
@@ -218,17 +222,31 @@ const presets: DatePreset[] = [
   }
 ]
 
+const visiblePresets = computed(() => presets.filter(p => !props.calendarOnly || p.value !== 'last24Hours'))
+const validRange = computed(() => {
+  const start = new Date(localStartDate.value + 'T00:00:00')
+  const end = new Date(localEndDate.value + 'T00:00:00')
+  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || start > end) return false
+  if (props.maxDate && localEndDate.value > props.maxDate) return false
+  if (props.maxDays) {
+    start.setDate(start.getDate() + props.maxDays - 1)
+    if (end > start) return false
+  }
+  return true
+})
+
 const displayValue = computed(() => {
-  if (activePreset.value) {
-    const preset = presets.find((p) => p.value === activePreset.value)
+  const appliedPreset = detectPreset(props.startDate, props.endDate)
+  if (appliedPreset) {
+    const preset = presets.find((p) => p.value === appliedPreset)
     if (preset) return t(preset.labelKey)
   }
 
-  if (localStartDate.value && localEndDate.value) {
-    if (localStartDate.value === localEndDate.value) {
-      return formatDate(localStartDate.value)
+  if (props.startDate && props.endDate) {
+    if (props.startDate === props.endDate) {
+      return formatDate(props.startDate)
     }
-    return `${formatDate(localStartDate.value)} - ${formatDate(localEndDate.value)}`
+    return `${formatDate(props.startDate)} - ${formatDate(props.endDate)}`
   }
 
   return t('dates.selectDateRange')
@@ -244,6 +262,14 @@ const isPresetActive = (preset: DatePreset): boolean => {
   return activePreset.value === preset.value
 }
 
+const detectPreset = (start: string, end: string): string | null => {
+  for (const preset of visiblePresets.value) {
+    const range = preset.getRange()
+    if (range.start === start && range.end === end) return preset.value
+  }
+  return null
+}
+
 const selectPreset = (preset: DatePreset) => {
   const range = preset.getRange()
   localStartDate.value = range.start
@@ -252,22 +278,18 @@ const selectPreset = (preset: DatePreset) => {
 }
 
 const onDateChange = () => {
-  // Check if current dates match any preset
-  activePreset.value = null
-  for (const preset of presets) {
-    const range = preset.getRange()
-    if (range.start === localStartDate.value && range.end === localEndDate.value) {
-      activePreset.value = preset.value
-      break
-    }
-  }
+  activePreset.value = detectPreset(localStartDate.value, localEndDate.value)
 }
 
 const toggle = () => {
+  localStartDate.value = props.startDate
+  localEndDate.value = props.endDate
+  onDateChange()
   isOpen.value = !isOpen.value
 }
 
 const apply = () => {
+  if (!validRange.value) return
   emit('update:startDate', localStartDate.value)
   emit('update:endDate', localEndDate.value)
   emit('change', {
@@ -280,14 +302,21 @@ const apply = () => {
 
 const handleClickOutside = (event: MouseEvent) => {
   if (containerRef.value && !containerRef.value.contains(event.target as Node)) {
-    isOpen.value = false
+    closeWithoutApplying()
   }
 }
 
 const handleEscape = (event: KeyboardEvent) => {
   if (event.key === 'Escape' && isOpen.value) {
-    isOpen.value = false
+    closeWithoutApplying()
   }
+}
+
+const closeWithoutApplying = () => {
+  localStartDate.value = props.startDate
+  localEndDate.value = props.endDate
+  onDateChange()
+  isOpen.value = false
 }
 
 // Sync local state with props

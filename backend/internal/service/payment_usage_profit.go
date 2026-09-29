@@ -31,17 +31,28 @@ type usageProfitReader interface {
 	GetUsageProfitDays(context.Context, time.Time, time.Time, string) ([]UsageProfitDay, error)
 }
 
-func (s *UpstreamConnectionService) GetPaymentUsageProfit(ctx context.Context, days int) (*UsageProfitTrend, error) {
-	if days != 1 && days != 7 && days != 30 && days != 90 {
+func (s *UpstreamConnectionService) GetPaymentUsageProfit(ctx context.Context, days int, dates ...string) (*UsageProfitTrend, error) {
+	if len(dates) == 0 && days != 1 && days != 7 && days != 30 && days != 90 {
 		return nil, infraerrors.BadRequest("INVALID_DAYS", "days must be 1, 7, 30 or 90")
 	}
 	now := s.now().In(timezone.Location())
-	start := timezone.StartOfDay(now).AddDate(0, 0, 1-days)
+	startDate, endDate := "", ""
+	if len(dates) == 2 {
+		startDate, endDate = dates[0], dates[1]
+	}
+	rangeValue, err := ParsePaymentDateRange(startDate, endDate, days, now)
+	if err != nil {
+		return nil, err
+	}
+	start, end, days := rangeValue.Start, rangeValue.End, rangeValue.Days
+	if end.After(now) {
+		end = now
+	}
 	reader, ok := s.repo.(usageProfitReader)
 	if !ok {
 		return nil, errors.New("usage profit reader unavailable")
 	}
-	points, err := reader.GetUsageProfitDays(ctx, start, now, timezone.Location().String())
+	points, err := reader.GetUsageProfitDays(ctx, start, end, timezone.Location().String())
 	if err != nil {
 		return nil, err
 	}

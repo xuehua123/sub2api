@@ -213,6 +213,7 @@ type PaymentService struct {
 	referralRefundSvc          *ReferralRefundService
 	affiliateService           *AffiliateService
 	notificationEmailService   *NotificationEmailService
+	dashboardRepository        PaymentDashboardRepository
 }
 
 func NewPaymentService(
@@ -258,6 +259,10 @@ func affiliateRefundReversalEnabledFromEnvironment() bool {
 
 func (s *PaymentService) SetNotificationEmailService(notificationEmailService *NotificationEmailService) {
 	s.notificationEmailService = notificationEmailService
+}
+
+func (s *PaymentService) SetDashboardRepository(repo PaymentDashboardRepository) {
+	s.dashboardRepository = repo
 }
 
 // --- Provider Registry ---

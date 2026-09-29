@@ -18,12 +18,12 @@ export interface PaymentProfitTrend {
   currency: string
 }
 export async function getPaymentProfit(
-  days: number,
+  range: number | { start_date: string; end_date: string },
   signal?: AbortSignal,
 ): Promise<PaymentProfitTrend> {
   return (
     await apiClient.get<PaymentProfitTrend>('/admin/payment/usage-profit', {
-      params: { days },
+      params: typeof range === 'number' ? { days: range } : range,
       signal,
     })
   ).data

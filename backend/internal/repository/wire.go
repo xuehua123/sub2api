@@ -117,6 +117,7 @@ var ProviderSet = wire.NewSet(
 	NewReferralRepository,
 	NewCommissionRepository,
 	NewRechargeOrderRepository,
+	NewPaymentDashboardRepository,
 	ProvideReferralCenterRelationRepository,
 	ProvideReferralAdminRelationRepository,
 	ProvideReferralCenterCommissionRepository,

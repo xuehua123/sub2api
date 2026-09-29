@@ -7,12 +7,12 @@
           <Icon name="dollar" size="md" class="text-green-600 dark:text-green-400" :stroke-width="2" />
         </div>
         <div>
-          <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('payment.admin.todayRevenue') }}</p>
-          <p v-for="[currency, amount] in sortedAmounts(stats.today_amount)" :key="currency" class="text-xl font-bold text-gray-900 dark:text-white">
+          <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('payment.admin.rangeRevenue') }}</p>
+          <p v-for="[currency, amount] in sortedAmounts(stats.total_amount)" :key="currency" class="text-xl font-bold text-gray-900 dark:text-white">
             {{ formatMoney(currency, amount) }}
           </p>
           <p class="text-xs text-gray-500 dark:text-gray-400">
-            {{ stats.today_count }} {{ t('payment.admin.orders') }}
+            {{ stats.total_count }} {{ t('payment.admin.orders') }}
           </p>
         </div>
       </div>
@@ -25,13 +25,8 @@
           <Icon name="creditCard" size="md" class="text-blue-600 dark:text-blue-400" :stroke-width="2" />
         </div>
         <div>
-          <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('payment.admin.totalRevenue') }}</p>
-          <p v-for="[currency, amount] in sortedAmounts(stats.total_amount)" :key="currency" class="text-xl font-bold text-gray-900 dark:text-white">
-            {{ formatMoney(currency, amount) }}
-          </p>
-          <p class="text-xs text-gray-500 dark:text-gray-400">
-            {{ stats.total_count }} {{ t('payment.admin.orders') }}
-          </p>
+          <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('payment.admin.rangeOrders') }}</p>
+          <p class="text-xl font-bold text-gray-900 dark:text-white">{{ stats.total_count }}</p>
         </div>
       </div>
     </div>
@@ -43,8 +38,8 @@
           <Icon name="chart" size="md" class="text-purple-600 dark:text-purple-400" :stroke-width="2" />
         </div>
         <div>
-          <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('payment.admin.todayOrders') }}</p>
-          <p class="text-xl font-bold text-gray-900 dark:text-white">{{ stats.today_count }}</p>
+          <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('payment.admin.rangePending') }}</p>
+          <p class="text-xl font-bold text-gray-900 dark:text-white">{{ stats.pending_orders }}</p>
         </div>
       </div>
     </div>

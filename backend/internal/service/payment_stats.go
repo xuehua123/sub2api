@@ -12,25 +12,46 @@ import (
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 )
 
 // --- Dashboard & Analytics ---
 
-func (s *PaymentService) GetDashboardStats(ctx context.Context, days int) (*DashboardStats, error) {
+func (s *PaymentService) GetDashboardStats(ctx context.Context, days int, dates ...string) (*DashboardStats, error) {
 	if days <= 0 {
 		days = 30
 	}
-	now := time.Now()
-	since := now.AddDate(0, 0, -days)
-	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	now := timezone.Now()
+	startDate, endDate := "", ""
+	if len(dates) == 2 {
+		startDate, endDate = dates[0], dates[1]
+	}
+	rangeValue, err := ParsePaymentDateRange(startDate, endDate, days, now)
+	if err != nil {
+		return nil, err
+	}
+	since, days := rangeValue.Start, rangeValue.Days
+	todayStart := timezone.StartOfDay(now)
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
 
 	paidStatuses := []string{OrderStatusCompleted, OrderStatusPaid, OrderStatusRecharging}
+	if s.dashboardRepository != nil {
+		aggregates, err := s.dashboardRepository.GetDashboardAggregates(ctx, rangeValue.Start, rangeValue.End, paidStatuses)
+		if err != nil {
+			return nil, err
+		}
+		return buildDashboardStatsFromAggregates(aggregates, rangeValue.Start, rangeValue.Days, todayStart), nil
+	}
 
 	orders, err := s.entClient.PaymentOrder.Query().
 		Where(
 			paymentorder.StatusIn(paidStatuses...),
 			paymentorder.PaidAtGTE(since),
+			paymentorder.PaidAtLT(rangeValue.End),
 		).
+		Select(paymentorder.FieldUserID, paymentorder.FieldUserEmail, paymentorder.FieldPayAmount,
+			paymentorder.FieldPaidAt, paymentorder.FieldPaymentType, paymentorder.FieldProviderSnapshot).
 		All(ctx)
 	if err != nil {
 		return nil, err
@@ -40,7 +61,7 @@ func (s *PaymentService) GetDashboardStats(ctx context.Context, days int) (*Dash
 	computeBasicStats(st, orders, todayStart)
 
 	st.PendingOrders, err = s.entClient.PaymentOrder.Query().
-		Where(paymentorder.StatusEQ(OrderStatusPending)).
+		Where(paymentorder.StatusEQ(OrderStatusPending), paymentorder.CreatedAtGTE(since), paymentorder.CreatedAtLT(rangeValue.End)).
 		Count(ctx)
 	if err != nil {
 		return nil, err
@@ -51,6 +72,76 @@ func (s *PaymentService) GetDashboardStats(ctx context.Context, days int) (*Dash
 	st.TopUsers = buildTopUsers(orders)
 
 	return st, nil
+}
+
+func buildDashboardStatsFromAggregates(aggregates *PaymentDashboardAggregates, since time.Time, days int, todayStart time.Time) *DashboardStats {
+	st := &DashboardStats{TotalAmount: make(CurrencyAmounts), TodayAmount: make(CurrencyAmounts), AvgAmount: make(CurrencyAmounts), PendingOrders: aggregates.PendingCount}
+	counts := make(map[string]int)
+	for _, a := range aggregates.Totals {
+		st.TotalAmount[a.Currency] = roundAmount(a.Amount)
+		counts[a.Currency] = a.Count
+		st.TotalCount += a.Count
+	}
+	for currency, amount := range st.TotalAmount {
+		if counts[currency] > 0 {
+			st.AvgAmount[currency] = roundAmount(amount / float64(counts[currency]))
+		}
+	}
+	for _, a := range aggregates.Daily {
+		if a.Date == todayStart.Format("2006-01-02") {
+			st.TodayAmount[a.Currency] += a.Amount
+			st.TodayCount += a.Count
+		}
+	}
+	roundCurrencyAmounts(st.TodayAmount)
+	st.DailySeries = make([]DailyStats, 0, days)
+	daily := make(map[string]*DailyStats)
+	for _, a := range aggregates.Daily {
+		d := daily[a.Date]
+		if d == nil {
+			d = &DailyStats{Date: a.Date, Amount: make(CurrencyAmounts)}
+			daily[a.Date] = d
+		}
+		d.Amount[a.Currency] += a.Amount
+		d.Count += a.Count
+	}
+	for i := 0; i < days; i++ {
+		date := since.AddDate(0, 0, i).Format("2006-01-02")
+		if d := daily[date]; d != nil {
+			roundCurrencyAmounts(d.Amount)
+			st.DailySeries = append(st.DailySeries, *d)
+		} else {
+			st.DailySeries = append(st.DailySeries, DailyStats{Date: date, Amount: make(CurrencyAmounts)})
+		}
+	}
+	methods := make(map[string]*PaymentMethodStat)
+	for _, a := range aggregates.Methods {
+		m := methods[a.PaymentType]
+		if m == nil {
+			m = &PaymentMethodStat{Type: a.PaymentType, Amount: make(CurrencyAmounts)}
+			methods[a.PaymentType] = m
+		}
+		m.Amount[a.Currency] += a.Amount
+		m.Count += a.Count
+	}
+	for _, m := range methods {
+		roundCurrencyAmounts(m.Amount)
+		st.PaymentMethods = append(st.PaymentMethods, *m)
+	}
+	sort.Slice(st.PaymentMethods, func(i, j int) bool { return st.PaymentMethods[i].Type < st.PaymentMethods[j].Type })
+	users := make(map[string][]TopUserStat)
+	for _, a := range aggregates.Users {
+		users[a.Currency] = append(users[a.Currency], TopUserStat{UserID: a.UserID, Email: a.Email, Amount: roundAmount(a.Amount)})
+	}
+	for currency, list := range users {
+		sort.Slice(list, func(i, j int) bool { return list[i].Amount > list[j].Amount })
+		if len(list) > topUsersLimit {
+			list = list[:topUsersLimit]
+		}
+		users[currency] = list
+	}
+	st.TopUsers = users
+	return st
 }
 
 func computeBasicStats(st *DashboardStats, orders []*dbent.PaymentOrder, todayStart time.Time) {
@@ -83,7 +174,7 @@ func buildDailySeries(orders []*dbent.PaymentOrder, since time.Time, days int) [
 		if o.PaidAt == nil {
 			continue
 		}
-		date := o.PaidAt.Format("2006-01-02")
+		date := o.PaidAt.In(since.Location()).Format("2006-01-02")
 		ds, ok := dailyMap[date]
 		if !ok {
 			ds = &DailyStats{Date: date, Amount: make(CurrencyAmounts)}
@@ -94,7 +185,7 @@ func buildDailySeries(orders []*dbent.PaymentOrder, since time.Time, days int) [
 	}
 	series := make([]DailyStats, 0, days)
 	for i := 0; i < days; i++ {
-		date := since.AddDate(0, 0, i+1).Format("2006-01-02")
+		date := since.AddDate(0, 0, i).Format("2006-01-02")
 		if ds, ok := dailyMap[date]; ok {
 			roundCurrencyAmounts(ds.Amount)
 			series = append(series, *ds)

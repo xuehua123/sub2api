@@ -84,7 +84,7 @@ ChartJS.register(
   Tooltip,
   Legend,
 )
-const props = defineProps<{ days: number }>()
+const props = defineProps<{ days?: number; range?: { start_date: string; end_date: string }; refreshKey?: number }>()
 const { t } = useI18n()
 const result = ref<PaymentProfitTrend | null>(null),
   loading = ref(false),
@@ -109,7 +109,7 @@ async function load() {
   error.value = false
   result.value = null
   try {
-    const data = await getPaymentProfit(props.days, controller.signal)
+    const data = await getPaymentProfit(props.range ?? props.days ?? 30, controller.signal)
     if (current === generation) result.value = data
   } catch {
     if (current === generation) error.value = true
@@ -117,7 +117,7 @@ async function load() {
     if (current === generation) loading.value = false
   }
 }
-watch(() => props.days, load, { immediate: true })
+watch(() => [props.days, props.range, props.refreshKey], load, { immediate: true })
 onBeforeUnmount(() => {
   generation++
   controller?.abort()
@@ -173,7 +173,7 @@ const chartData = computed(() => ({
     borderColor: m.color,
     backgroundColor: m.color,
     borderWidth: 2,
-    pointRadius: props.days <= 30 ? 2 : 0,
+    pointRadius: (result.value?.daily.length ?? 0) <= 30 ? 2 : 0,
     pointHitRadius: 10,
     tension: 0,
     spanGaps: false,

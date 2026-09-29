@@ -48,6 +48,18 @@ it('plots revenue, cost and negative profit with monetary tooltip values', async
   w.unmount()
 })
 describe('range request ordering', () => {
+  it('sends inclusive calendar dates and refreshes the same range', async () => {
+    get.mockReset()
+    get.mockResolvedValue({ data: { daily: [], total_cost: 0, total_revenue: 0, gross_profit: 0 } })
+    const range = { start_date: '2026-08-01', end_date: '2026-08-31' }
+    const w = mount(Profit, { props: { range, refreshKey: 0 } })
+    await flushPromises()
+    expect(get.mock.calls[0][1].params).toEqual(range)
+    await w.setProps({ refreshKey: 1 })
+    await flushPromises()
+    expect(get).toHaveBeenCalledTimes(2)
+    w.unmount()
+  })
   it('ignores older responses and aborts the previous request', async () => {
     let resolveOld: (v: unknown) => void = () => {}
     get.mockReset()
