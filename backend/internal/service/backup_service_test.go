@@ -404,6 +404,53 @@ func seedBackupSchedule(t *testing.T, repo *mockSettingRepo, schedule BackupSche
 
 // ─── Tests ───
 
+func TestBackupService_S3ConfigStaysEncryptedAfterSecondSave(t *testing.T) {
+	repo := newMockSettingRepo()
+	svc := newTestBackupService(repo, &mockDumper{}, newMockObjectStore())
+
+	_, err := svc.UpdateS3Config(context.Background(), BackupS3Config{
+		Bucket:          "my-bucket",
+		AccessKeyID:     "AKID",
+		SecretAccessKey: "original-secret",
+	})
+	require.NoError(t, err)
+
+	storedSecret := func() string {
+		raw, _ := repo.GetValue(context.Background(), settingKeyBackupS3Config)
+		var stored BackupS3Config
+		require.NoError(t, json.Unmarshal([]byte(raw), &stored))
+		return stored.SecretAccessKey
+	}
+	require.Equal(t, "ENC:original-secret", storedSecret())
+
+	// 第二次保存不带 secret，只改别的字段。
+	_, err = svc.UpdateS3Config(context.Background(), BackupS3Config{
+		Bucket:      "my-bucket",
+		AccessKeyID: "AKID",
+		Prefix:      "second",
+	})
+	require.NoError(t, err)
+
+	require.Equal(t, "ENC:original-secret", storedSecret(),
+		"secret must stay encrypted at rest after a save that inherits it")
+	require.NotEqual(t, "original-secret", storedSecret(), "secret must never be stored as plaintext")
+
+	// 第三次保存，确认不会反复套壳加密。
+	_, err = svc.UpdateS3Config(context.Background(), BackupS3Config{
+		Bucket:      "my-bucket",
+		AccessKeyID: "AKID",
+		Prefix:      "third",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "ENC:original-secret", storedSecret(), "secret must not be double-encrypted")
+
+	internal, err := svc.loadS3Config(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "original-secret", internal.SecretAccessKey)
+	require.Equal(t, "AKID", internal.AccessKeyID)
+	require.Equal(t, "third", internal.Prefix)
+}
+
 func TestBackupService_S3ConfigEncryption(t *testing.T) {
 	repo := newMockSettingRepo()
 	svc := newTestBackupService(repo, &mockDumper{}, newMockObjectStore())

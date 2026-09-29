@@ -507,6 +507,7 @@ describe('admin GroupsView column settings', () => {
             per_request_price: null,
             intervals: [],
             time_pricing: null,
+            reasoning_effort_multipliers: null,
           },
         ],
       }),
@@ -527,6 +528,7 @@ describe('admin GroupsView column settings', () => {
       per_request_price: null,
       intervals: [],
       time_pricing: null,
+      reasoning_effort_multipliers: { high: 2 },
     }
     const group = createGroup({
       id: 42,

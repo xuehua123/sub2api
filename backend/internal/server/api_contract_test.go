@@ -1013,6 +1013,10 @@ func TestAPIContracts(t *testing.T) {
 					"table_page_size_options": [10, 20, 50, 100],
 					"min_claude_code_version": "",
 					"max_claude_code_version": "",
+					"claude_code_client_version": "",
+					"claude_code_client_version_synced": "",
+					"claude_code_version_auto_sync_enabled": true,
+					"cyber_policy_user_allowlist": "",
 					"min_codex_version": "",
 					"max_codex_version": "",
 					"channel_monitor_enabled": true,
@@ -1382,6 +1386,10 @@ func TestAPIContracts(t *testing.T) {
 					"ops_metrics_interval_seconds": 60,
 					"min_claude_code_version": "",
 					"max_claude_code_version": "",
+					"claude_code_client_version": "",
+					"claude_code_client_version_synced": "",
+					"claude_code_version_auto_sync_enabled": true,
+					"cyber_policy_user_allowlist": "",
 					"min_codex_version": "",
 					"max_codex_version": "",
 					"channel_monitor_enabled": true,
@@ -3232,7 +3240,7 @@ func (r *stubUsageLogRepo) GetAPIKeyUsageTrend(ctx context.Context, startTime, e
 	return nil, errors.New("not implemented")
 }
 
-func (r *stubUsageLogRepo) GetUserUsageTrend(ctx context.Context, startTime, endTime time.Time, granularity string, limit int) ([]usagestats.UserUsageTrendPoint, error) {
+func (r *stubUsageLogRepo) GetUserUsageTrend(ctx context.Context, startTime, endTime time.Time, granularity string, limit int, metric string) ([]usagestats.UserUsageTrendPoint, error) {
 	return nil, errors.New("not implemented")
 }
 

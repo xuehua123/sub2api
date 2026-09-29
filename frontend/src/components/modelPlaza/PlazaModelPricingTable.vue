@@ -100,11 +100,13 @@
                 {{ t('modelPlaza.table.marginalBadge') }}
               </span>
               <span
-                v-if="m.pricing?.max_reasoning_effort_multiplier"
+                v-for="([effort, multiplier]) in reasoningEffortMultipliers(m)"
+                :key="effort"
+                :data-reasoning-effort="effort"
                 class="rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
-                :title="t('modelPlaza.table.maxReasoningMultiplierHint', { multiplier: m.pricing.max_reasoning_effort_multiplier })"
+                :title="t('modelPlaza.table.reasoningMultiplierHint', { effort, multiplier })"
               >
-                {{ t('modelPlaza.table.maxReasoningMultiplierBadge', { multiplier: m.pricing.max_reasoning_effort_multiplier }) }}
+                {{ t('modelPlaza.table.reasoningMultiplierBadge', { effort, multiplier }) }}
               </span>
             </div>
           </td>
@@ -324,6 +326,7 @@
 </template>
 
 <script setup lang="ts">
+import { REASONING_EFFORT_LEVELS } from '@/constants/channel'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { formatScaled, resolveIntervalPrices } from '@/utils/pricing'
@@ -453,9 +456,19 @@ function usesIndependentVideoRate(m: PlazaModel): boolean {
 
 /** 按次/按图片行的生效倍率。 */
 function requestRate(m: PlazaModel): number {
-  if (usesIndependentImageRate(m)) return props.imageRateMultiplier ?? 1
-  if (usesIndependentVideoRate(m)) return props.videoRateMultiplier ?? 1
+  if (usesIndependentImageRate(m)) return Math.max(0, props.imageRateMultiplier ?? 1)
+  if (usesIndependentVideoRate(m)) return Math.max(0, props.videoRateMultiplier ?? 1)
   return effectiveRate.value
+}
+
+function reasoningEffortMultipliers(model: PlazaModel): [string, number][] {
+  const multipliers = model.pricing?.reasoning_effort_multipliers
+  return REASONING_EFFORT_LEVELS.flatMap(effort => {
+    const multiplier = multipliers?.[effort]
+    return typeof multiplier === 'number' && Number.isFinite(multiplier) && multiplier > 0
+      ? [[effort, multiplier] as [string, number]]
+      : []
+  })
 }
 
 /** 按次 / 按图片单价(乘该行生效倍率,不换算 1M)。 */

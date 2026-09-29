@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 	"time"
@@ -103,6 +104,7 @@ type ChannelModelPricing struct {
 	FastMultiplier               *float64            `json:"fast_multiplier"`
 	FlexMultiplier               *float64            `json:"flex_multiplier"`
 	MaxReasoningEffortMultiplier *float64            `json:"max_reasoning_effort_multiplier"`
+	ReasoningEffortMultipliers   map[string]float64  `json:"reasoning_effort_multipliers,omitempty"`
 	ImageInputPrice              *float64            `json:"image_input_price"`
 	ImageOutputPrice             *float64            `json:"image_output_price"`
 	PerRequestPrice              *float64            `json:"per_request_price"`
@@ -217,6 +219,7 @@ func (p *ChannelModelPricing) GetTierByLabel(label string) *PricingInterval {
 // Clone 返回 ChannelModelPricing 的拷贝（切片独立，指针字段共享，调用方只读安全）
 func (p ChannelModelPricing) Clone() ChannelModelPricing {
 	cp := p
+	cp.ReasoningEffortMultipliers = maps.Clone(p.ReasoningEffortMultipliers)
 	if p.Models != nil {
 		cp.Models = make([]string, len(p.Models))
 		copy(cp.Models, p.Models)

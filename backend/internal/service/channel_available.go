@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 	"time"
@@ -938,6 +939,9 @@ func overlayConfiguredPrices(dst, configured *ChannelModelPricing) {
 	if configured.MaxReasoningEffortMultiplier != nil {
 		dst.MaxReasoningEffortMultiplier = cloneDisplayPrice(configured.MaxReasoningEffortMultiplier)
 	}
+	if configured.ReasoningEffortMultipliers != nil {
+		dst.ReasoningEffortMultipliers = maps.Clone(configured.ReasoningEffortMultipliers)
+	}
 }
 
 func cloneChannelModelPricingForDisplay(pricing *ChannelModelPricing) *ChannelModelPricing {
@@ -1089,6 +1093,7 @@ func synthesizePricingFromLiteLLM(lp *LiteLLMModelPricing, existing *ChannelMode
 	}
 
 	synthesized.Platform = existing.Platform
+	synthesized.ReasoningEffortMultipliers = maps.Clone(existing.ReasoningEffortMultipliers)
 	synthesized.Models = append([]string(nil), existing.Models...)
 	synthesized.Intervals = append([]PricingInterval(nil), existing.Intervals...)
 	overlayConfiguredPrices(synthesized, existing)

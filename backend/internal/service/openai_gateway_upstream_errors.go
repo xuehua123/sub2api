@@ -313,6 +313,10 @@ func isOpenAIResponsesLiteParallelToolCallsUpstreamError(statusCode int, upstrea
 }
 
 func isOpenAICompatibleModelNotFound400(respBody []byte) bool {
+	return isOpenAICompatibleModelNotFoundBody(respBody)
+}
+
+func isOpenAICompatibleModelNotFoundBody(respBody []byte) bool {
 	code := strings.TrimSpace(extractUpstreamErrorCode(respBody))
 	if code != "" {
 		return strings.EqualFold(code, "model_not_found")
@@ -323,6 +327,7 @@ func isOpenAICompatibleModelNotFound400(respBody []byte) bool {
 		msg = strings.ToLower(strings.TrimSpace(string(respBody)))
 	}
 	return strings.Contains(msg, "unknown provider for model") ||
+		strings.Contains(msg, "unknown model") ||
 		strings.Contains(msg, "model not found") ||
 		strings.Contains(msg, "model is not supported")
 }

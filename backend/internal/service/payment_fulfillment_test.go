@@ -3187,6 +3187,10 @@ func (s *paymentFulfillmentAffiliateRepoStub) GetAffiliateUserOverview(ctx conte
 	return nil, nil
 }
 
+func (s *paymentFulfillmentAffiliateRepoStub) WithdrawQuota(ctx context.Context, userID int64, amount float64, operationID string) (*AffiliateWithdrawResult, error) {
+	return nil, nil
+}
+
 type paymentFulfillmentSettingRepoStub struct {
 	values map[string]string
 }

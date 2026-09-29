@@ -221,3 +221,10 @@ worktree/tools/subscription_entitlements_v2_staging_smoke.ps1:generic-api-key:35
 200b1406d7eb42115ea16ca4fc5363bee9d2155f:backend/internal/service/gateway_fallbacks_sanitize_test.go:generic-api-key:92
 
 3d6c207723b40c2f727f0fec3e37dbee49217b71:frontend/src/api/__tests__/admin.subscriptions.bulk.spec.ts:generic-api-key:18
+# Upstream synthetic withdrawal idempotency identifiers, not credentials.
+index/backend/internal/handler/admin/affiliate_handler_withdraw_test.go:generic-api-key:16
+worktree/backend/internal/handler/admin/affiliate_handler_withdraw_test.go:generic-api-key:16
+index/backend/internal/service/affiliate_service_test.go:generic-api-key:152
+worktree/backend/internal/service/affiliate_service_test.go:generic-api-key:152
+c19204289d04f643fcf3442dbf998d3796f33555:backend/internal/handler/admin/affiliate_handler_withdraw_test.go:generic-api-key:16
+c19204289d04f643fcf3442dbf998d3796f33555:backend/internal/service/affiliate_service_test.go:generic-api-key:152

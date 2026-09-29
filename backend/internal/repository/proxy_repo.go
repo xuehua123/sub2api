@@ -16,6 +16,19 @@ import (
 	entsql "entgo.io/ent/dialect/sql"
 )
 
+type proxyProbeIdentity struct {
+	protocol string
+	host     string
+	port     int
+	username string
+	password string
+	status   string
+}
+
+func proxyProbeIdentityFromService(proxyIn *service.Proxy) proxyProbeIdentity {
+	return proxyProbeIdentity{protocol: proxyIn.Protocol, host: proxyIn.Host, port: proxyIn.Port, username: proxyIn.Username, password: proxyIn.Password, status: proxyIn.Status}
+}
+
 // sqlQuerier 已替换为 sqlExecutor（定义在 group_repo.go），
 // proxyRepository 使用同一接口以支持 ExecContext。
 type proxyRepository struct {
@@ -187,14 +200,53 @@ func updateProxyAndInvalidateOllamaCloudUsageSnapshots(ctx context.Context, clie
 	if currentIdentity == ollamaCloudUsageProxyIdentityFromService(proxyIn) {
 		return updated, nil
 	}
-	accountIDs, err := invalidateProxyOllamaCloudUsageSnapshots(ctx, client, proxyIn.ID)
+	probeIDs, err := invalidateProxyProbeSnapshots(ctx, client, proxyIn.ID)
 	if err != nil {
 		return nil, err
 	}
-	if err := enqueueOllamaCloudUsageAccountChanges(ctx, client, accountIDs); err != nil {
+	if err := enqueueProxyProbeAccountChanges(ctx, client, probeIDs); err != nil {
 		return nil, err
 	}
 	return updated, nil
+}
+
+func invalidateProxyProbeSnapshots(ctx context.Context, exec sqlExecutor, proxyID int64) ([]int64, error) {
+	rows, err := exec.QueryContext(ctx, `
+		UPDATE accounts
+		SET extra = COALESCE(extra, '{}'::jsonb) - 'upstream_billing_probe' - 'ollama_cloud_usage_snapshot' - 'opencode_go_usage_snapshot', updated_at = NOW()
+		WHERE proxy_id = $1 AND type = 'apikey' AND deleted_at IS NULL AND (
+			(extra ? 'upstream_billing_probe' AND extra -> 'upstream_billing_probe' <> 'null'::jsonb)
+			OR (platform IN (`+ollamaCloudUsagePlatformsSQL+`) AND extra ? 'ollama_cloud_usage_snapshot' AND extra -> 'ollama_cloud_usage_snapshot' <> 'null'::jsonb)
+			OR ((platform = 'opencode_go' OR platform IN (`+opencodeGoUsageMountPlatformsSQL+`)) AND extra ? 'opencode_go_usage_snapshot' AND extra -> 'opencode_go_usage_snapshot' <> 'null'::jsonb)
+		) RETURNING id
+	`, proxyID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	ids := make([]int64, 0)
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+func enqueueProxyProbeAccountChanges(ctx context.Context, exec sqlExecutor, accountIDs []int64) error {
+	accountIDs = sortedUniqueAccountIDs(accountIDs)
+	for start := 0; start < len(accountIDs); start += ollamaCloudUsageOutboxAccountChunkSize {
+		end := start + ollamaCloudUsageOutboxAccountChunkSize
+		if end > len(accountIDs) {
+			end = len(accountIDs)
+		}
+		if err := enqueueSchedulerOutbox(ctx, exec, service.SchedulerOutboxEventAccountBulkChanged, nil, nil, map[string]any{"account_ids": accountIDs[start:end]}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func lockOllamaCloudUsageProxyIdentity(ctx context.Context, client *dbent.Client, proxyID int64) (ollamaCloudUsageProxyIdentity, error) {
@@ -219,38 +271,6 @@ func lockOllamaCloudUsageProxyIdentity(ctx context.Context, client *dbent.Client
 		return ollamaCloudUsageProxyIdentity{}, err
 	}
 	return identity, rows.Err()
-}
-
-func invalidateProxyOllamaCloudUsageSnapshots(ctx context.Context, exec sqlExecutor, proxyID int64) ([]int64, error) {
-	rows, err := exec.QueryContext(ctx, `
-		UPDATE accounts
-		SET extra = COALESCE(extra, '{}'::jsonb)
-				- 'ollama_cloud_usage_snapshot',
-			updated_at = NOW()
-		WHERE proxy_id = $1
-			AND platform IN (`+ollamaCloudUsagePlatformsSQL+`)
-			AND type = 'apikey'
-			AND extra ? 'ollama_cloud_usage_snapshot'
-			AND extra -> 'ollama_cloud_usage_snapshot' <> 'null'::jsonb
-			AND deleted_at IS NULL
-		RETURNING id
-	`, proxyID)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	accountIDs := make([]int64, 0)
-	for rows.Next() {
-		var accountID int64
-		if err := rows.Scan(&accountID); err != nil {
-			return nil, err
-		}
-		accountIDs = append(accountIDs, accountID)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return accountIDs, nil
 }
 
 func enqueueOllamaCloudUsageAccountChanges(ctx context.Context, exec sqlExecutor, accountIDs []int64) error {
@@ -629,7 +649,7 @@ func (r *proxyRepository) ListAllForFallback(ctx context.Context) ([]service.Pro
 // 全部代理处理完后若有账号被改投，再统一 enqueue 一次 account_bulk_changed 事件——该 enqueue 在子事务之外
 // （走 r.sql、失败仅记日志、由调度器周期性 full rebuild 兜底），故「改投 → 失效」整体并非原子。
 func (r *proxyRepository) SweepExpiredProxies(ctx context.Context, now time.Time) (int64, error) {
-	// 快照读（事务前）：允许脏读不影响正确性，事务内已加锁写。
+	// Recheck the scanned expiry and fallback settings in the transaction.
 	all, err := r.ListAllForFallback(ctx)
 	if err != nil {
 		return 0, err
@@ -653,7 +673,7 @@ func (r *proxyRepository) SweepExpiredProxies(ctx context.Context, now time.Time
 			logger.LegacyPrintf("repository.proxy", "[ProxyExpiry] proxy %d expired but fallback chain unresolved (cycle/all-expired); accounts kept", p.ID)
 		}
 
-		changedAccountIDs, sweepErr := r.sweepOneExpiredProxy(ctx, p.ID, target, change)
+		changedAccountIDs, sweepErr := r.sweepOneExpiredProxy(ctx, p, now, target, change)
 		if sweepErr != nil {
 			return totalChanged, sweepErr
 		}
@@ -691,7 +711,7 @@ func sortedUniqueAccountIDs(accountIDs []int64) []int64 {
 
 // sweepOneExpiredProxy 在单事务内原子执行：标记代理 expired + 改投绑定账号。
 // 若 r.client 已绑定事务（测试注入场景），直接在 r.sql 上执行，由外层事务保证原子性。
-func (r *proxyRepository) sweepOneExpiredProxy(ctx context.Context, proxyID int64, target *int64, change bool) ([]int64, error) {
+func (r *proxyRepository) sweepOneExpiredProxy(ctx context.Context, snapshot service.Proxy, now time.Time, target *int64, change bool) ([]int64, error) {
 	// 尝试开启子事务；若 r.client 已是事务 client，则返回 ErrTxStarted，退回使用 r.sql。
 	tx, txErr := r.client.Tx(ctx)
 	if txErr != nil {
@@ -699,13 +719,13 @@ func (r *proxyRepository) sweepOneExpiredProxy(ctx context.Context, proxyID int6
 			return nil, txErr
 		}
 		// 已在外层事务中（集成测试场景），直接用 r.sql 执行
-		return r.sweepOneExpiredProxyOnExec(ctx, r.sql, proxyID, target, change)
+		return r.sweepOneExpiredProxyOnExec(ctx, r.sql, snapshot, now, target, change)
 	}
 
 	// 使用新事务执行
 	var accountIDs []int64
 	var err error
-	accountIDs, err = r.sweepOneExpiredProxyOnExec(ctx, tx, proxyID, target, change)
+	accountIDs, err = r.sweepOneExpiredProxyOnExec(ctx, tx, snapshot, now, target, change)
 	if err != nil {
 		_ = tx.Rollback()
 		return nil, err
@@ -717,14 +737,27 @@ func (r *proxyRepository) sweepOneExpiredProxy(ctx context.Context, proxyID int6
 }
 
 // sweepOneExpiredProxyOnExec 在给定的 sqlExecutor 上执行：标记 expired + 改投账号。
-func (r *proxyRepository) sweepOneExpiredProxyOnExec(ctx context.Context, exec sqlExecutor, proxyID int64, target *int64, change bool) ([]int64, error) {
-	if _, err := exec.ExecContext(ctx,
-		`UPDATE proxies SET status=$1, updated_at=NOW() WHERE id=$2 AND deleted_at IS NULL`,
-		service.StatusExpired, proxyID); err != nil {
-		return nil, err
+func (r *proxyRepository) sweepOneExpiredProxyOnExec(ctx context.Context, exec sqlExecutor, snapshot service.Proxy, now time.Time, target *int64, change bool) ([]int64, error) {
+	proxyID := snapshot.ID
+	result, updateErr := exec.ExecContext(ctx, `
+		UPDATE proxies SET status=$1, updated_at=NOW()
+		WHERE id=$2 AND deleted_at IS NULL AND status=$3
+		  AND expires_at <= $4 AND expires_at = $5
+		  AND fallback_mode=$6 AND backup_proxy_id IS NOT DISTINCT FROM $7`,
+		service.StatusExpired, proxyID, service.StatusActive, now, snapshot.ExpiresAt,
+		snapshot.FallbackMode, snapshot.BackupProxyID)
+	if updateErr != nil {
+		return nil, updateErr
+	}
+	changed, updateErr := result.RowsAffected()
+	if updateErr != nil {
+		return nil, updateErr
+	}
+	if changed == 0 {
+		return nil, nil
 	}
 	if !change {
-		accountIDs, err := invalidateProxyOllamaCloudUsageSnapshots(ctx, exec, proxyID)
+		accountIDs, err := invalidateProxyProbeSnapshots(ctx, exec, proxyID)
 		if err != nil {
 			return nil, err
 		}
@@ -743,8 +776,8 @@ func (r *proxyRepository) sweepOneExpiredProxyOnExec(ctx context.Context, exec s
 		rows, err = exec.QueryContext(ctx, `
 			UPDATE accounts SET proxy_id=NULL, proxy_fallback_origin_id=COALESCE(proxy_fallback_origin_id,$1),
 				extra=CASE
-					WHEN type='apikey' AND extra ? 'upstream_billing_probe'
-					THEN extra - 'upstream_billing_probe'
+					WHEN type='apikey'
+					THEN COALESCE(extra, '{}'::jsonb) - 'upstream_billing_probe' - 'ollama_cloud_usage_snapshot' - 'opencode_go_usage_snapshot'
 					ELSE extra
 				END,
 				updated_at=NOW()
@@ -754,8 +787,8 @@ func (r *proxyRepository) sweepOneExpiredProxyOnExec(ctx context.Context, exec s
 		rows, err = exec.QueryContext(ctx, `
 			UPDATE accounts SET proxy_id=$2, proxy_fallback_origin_id=COALESCE(proxy_fallback_origin_id,$1),
 				extra=CASE
-					WHEN type='apikey' AND extra ? 'upstream_billing_probe'
-					THEN extra - 'upstream_billing_probe'
+					WHEN type='apikey'
+					THEN COALESCE(extra, '{}'::jsonb) - 'upstream_billing_probe' - 'ollama_cloud_usage_snapshot' - 'opencode_go_usage_snapshot'
 					ELSE extra
 				END,
 				updated_at=NOW()

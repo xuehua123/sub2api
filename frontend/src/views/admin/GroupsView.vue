@@ -4451,6 +4451,8 @@ import {
   perTokenToMTok,
   toNullableNumber,
   validateIntervals,
+  validateReasoningEffortMultipliers,
+  formReasoningEffortMultipliersToAPI,
 } from "@/components/admin/channel/types";
 import type { ChannelModelPricing } from "@/api/admin/channels";
 import { VueDraggable } from "vue-draggable-plus";
@@ -4574,6 +4576,11 @@ const validateGroupPricingEntries = (
     return false;
   }
   for (const entry of entries) {
+    const reasoningError = validateReasoningEffortMultipliers(entry.reasoning_effort_multipliers, t);
+    if (reasoningError) {
+      appStore.showError(reasoningError);
+      return false;
+    }
     if (
       ["per_request", "image", "video"].includes(entry.billing_mode) &&
       (entry.per_request_price == null || entry.per_request_price === "") &&
@@ -4599,6 +4606,7 @@ const groupPricingFromAPI = (
   (pricing || []).map((entry) => ({
     models: entry.models || [],
     billing_mode: entry.billing_mode || "token",
+    reasoning_effort_multipliers: { ...entry.reasoning_effort_multipliers },
     input_price: perTokenToMTok(entry.input_price),
     output_price: perTokenToMTok(entry.output_price),
     cache_write_price: perTokenToMTok(entry.cache_write_price),
@@ -4623,6 +4631,7 @@ const groupPricingToAPI = (
         platform,
         models: entry.models,
         billing_mode: entry.billing_mode,
+        reasoning_effort_multipliers: formReasoningEffortMultipliersToAPI(entry.reasoning_effort_multipliers),
         input_price: mTokToPerToken(entry.input_price),
         output_price: mTokToPerToken(entry.output_price),
         cache_write_price: mTokToPerToken(entry.cache_write_price),

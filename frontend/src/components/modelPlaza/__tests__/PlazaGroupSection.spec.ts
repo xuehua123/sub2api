@@ -68,6 +68,8 @@ function group(overrides: Partial<ModelPlazaGroup> = {}): ModelPlazaGroup {
     is_exclusive: false,
     image_rate_independent: false,
     image_rate_multiplier: 1,
+    video_rate_independent: false,
+    video_rate_multiplier: 1,
     long_context_pricing_enabled: true,
     models: [ladderModel(2)],
     ...overrides
@@ -90,6 +92,15 @@ function mountSection(g: ModelPlazaGroup) {
 const NOTE = 'modelPlaza.detail.longContextDisabledNote'
 
 describe('PlazaGroupSection 长上下文说明', () => {
+  it('keeps the official-price table independent of video discounts', () => {
+    const value = group({ video_rate_independent: true, video_rate_multiplier: 0 })
+    const wrapper = mountSection(value)
+    const table = wrapper.getComponent(PlazaCatalogPricingTable)
+    expect(table.props('models')).toEqual(value.models)
+    expect(table.attributes('video-rate-multiplier')).toBeUndefined()
+    expect(table.attributes('video-rate-independent')).toBeUndefined()
+    wrapper.unmount()
+  })
   it('分组关闭阶梯且组内有官方阶梯模型时显示说明', () => {
     const wrapper = mountSection(group({ long_context_pricing_enabled: false }))
     expect(wrapper.text()).toContain(NOTE)

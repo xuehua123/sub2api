@@ -375,8 +375,8 @@ func TestUpdateCredentialsPlainCNAPIKeyAccountCleanupStaysSemanticallyEquivalent
 	require.Contains(t, query,
 		"platform IN ('openai', 'anthropic', 'kimi', 'zhipu', 'deepseek', 'minimax') AND type = 'apikey' AND credentials IS DISTINCT FROM $1::jsonb")
 	require.Contains(t, query,
-		"THEN COALESCE(extra, '{}'::jsonb) - 'ollama_cloud_usage_session' - 'ollama_cloud_usage_auto_refresh' - 'ollama_cloud_usage_snapshot'")
-	require.NotContains(t, query, "upstream_billing_probe")
+		"THEN COALESCE(extra, '{}'::jsonb) - 'upstream_billing_probe' - 'ollama_cloud_usage_session' - 'ollama_cloud_usage_auto_refresh' - 'ollama_cloud_usage_snapshot'")
+	require.Contains(t, query, "WHEN type = 'apikey' AND credentials IS DISTINCT FROM $1::jsonb")
 	require.NotContains(t, query, "- 'upstream_billing_rate_sync_enabled'")
 	require.NoError(t, mock.ExpectationsWereMet())
 }

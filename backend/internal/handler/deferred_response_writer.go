@@ -152,10 +152,11 @@ func (w *deferredResponseWriter) FlushTo(dst gin.ResponseWriter) {
 		return
 	}
 	copyHeader(dst.Header(), w.header)
+	dst.WriteHeader(w.status)
 	if !w.Written() {
 		return
 	}
-	dst.WriteHeader(w.status)
+	dst.WriteHeaderNow()
 	if w.body.Len() > 0 {
 		_, _ = dst.Write(w.body.Bytes())
 	}

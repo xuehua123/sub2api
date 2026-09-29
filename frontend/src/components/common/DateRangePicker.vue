@@ -111,10 +111,11 @@ const containerRef = ref<HTMLElement | null>(null)
 const localStartDate = ref(props.startDate)
 const localEndDate = ref(props.endDate)
 const activePreset = ref<string | null>('last24Hours')
+const dateReference = ref(new Date())
 
 const today = computed(() => {
   // Use local timezone to avoid UTC timezone issues
-  const now = new Date()
+  const now = dateReference.value
   const year = now.getFullYear()
   const month = String(now.getMonth() + 1).padStart(2, '0')
   const day = String(now.getDate()).padStart(2, '0')
@@ -124,7 +125,7 @@ const today = computed(() => {
 // Tomorrow's date - used for max date to handle timezone differences
 // When user is in a timezone behind the server, "today" on server might be "tomorrow" locally
 const tomorrow = computed(() => {
-  const d = new Date()
+  const d = new Date(dateReference.value)
   d.setDate(d.getDate() + 1)
   return formatDateToString(d)
 })
@@ -271,6 +272,7 @@ const detectPreset = (start: string, end: string): string | null => {
 }
 
 const selectPreset = (preset: DatePreset) => {
+  dateReference.value = new Date()
   const range = preset.getRange()
   localStartDate.value = range.start
   localEndDate.value = range.end
@@ -282,6 +284,7 @@ const onDateChange = () => {
 }
 
 const toggle = () => {
+  dateReference.value = new Date()
   localStartDate.value = props.startDate
   localEndDate.value = props.endDate
   onDateChange()
