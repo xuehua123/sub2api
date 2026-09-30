@@ -1020,7 +1020,7 @@ var ProviderSet = wire.NewSet(
 	NewUserBusinessService,
 	ProvideUpstreamConnectionSyncService,
 	ProvideOpenCodeGoUsageService,
-	NewClaudeResetCreditService,
+	ProvideClaudeResetCreditService,
 	NewModelPricingResolver,
 	NewModelPlazaService,
 	NewContentModerationService,
@@ -1165,4 +1165,10 @@ func ProvidePluginManager(repo PluginRepository, encryptor SecretEncryptor, cfg 
 	manager := NewPluginManager(repo, encryptor, cfg, hostInfo, kvStore)
 	manager.SetAccountDirectory(gateway)
 	return manager
+}
+
+func ProvideClaudeResetCreditService(accounts AccountRepository, tokens *ClaudeTokenProvider, proxies ProxyRepository, settings *SettingService, idem *IdempotencyCoordinator, locks LeaderLockCache) *ClaudeResetCreditService {
+	s := NewClaudeResetCreditService(accounts, tokens, proxies, settings)
+	s.ConfigureRedemption(idem, locks)
+	return s
 }
