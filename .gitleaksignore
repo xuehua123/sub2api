@@ -228,3 +228,11 @@ index/backend/internal/service/affiliate_service_test.go:generic-api-key:152
 worktree/backend/internal/service/affiliate_service_test.go:generic-api-key:152
 c19204289d04f643fcf3442dbf998d3796f33555:backend/internal/handler/admin/affiliate_handler_withdraw_test.go:generic-api-key:16
 c19204289d04f643fcf3442dbf998d3796f33555:backend/internal/service/affiliate_service_test.go:generic-api-key:152
+
+# Upstream TypeSafe documentation uses the literal placeholder sk-your-sub2api-key.
+index/README.md:curl-auth-header:845
+worktree/README.md:curl-auth-header:845
+index/README_CN.md:curl-auth-header:761
+worktree/README_CN.md:curl-auth-header:761
+d1ba57977d2dfec66d06438a9e8863ae72935c6c:README.md:curl-auth-header:840
+d1ba57977d2dfec66d06438a9e8863ae72935c6c:README_CN.md:curl-auth-header:756
