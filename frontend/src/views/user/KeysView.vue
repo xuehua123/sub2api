@@ -1595,7 +1595,7 @@ const allColumns = computed<Column[]>(() => [
   { key: 'id', label: t('keys.id'), sortable: true },
   { key: 'key', label: t('keys.apiKey'), sortable: false },
   { key: 'entitlement', label: t('keys.accessSourceColumn'), sortable: false },
-  { key: 'group', label: t('keys.currentGroupLabel'), sortable: false },
+  { key: 'group', label: t('keys.currentGroupLabel'), sortable: true },
   { key: 'current_concurrency', label: t('keys.currentConcurrency'), sortable: true },
   { key: 'usage', label: t('keys.usage'), sortable: false },
   { key: 'rate_limit', label: t('keys.rateLimitColumn'), sortable: false },

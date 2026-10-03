@@ -509,6 +509,9 @@ func withoutRetiredUpstreamManagementCredentials(credentials map[string]any) map
 }
 
 func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]any) (*Account, error) {
+	if input.Platform == PlatformTypeSafe && input.Type != AccountTypeAPIKey {
+		return nil, errors.New("typesafe accounts only support apikey credentials")
+	}
 	stripRetiredAccountProbeExtra(accountExtra)
 	credentials := withoutRetiredUpstreamManagementCredentials(input.Credentials)
 	// Ollama session state is system-managed. New accounts always start with automatic refresh disabled.
@@ -675,6 +678,9 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	effectiveType := account.Type
 	if input.Type != "" {
 		effectiveType = input.Type
+	}
+	if account.Platform == PlatformTypeSafe && effectiveType != AccountTypeAPIKey {
+		return nil, errors.New("typesafe accounts only support apikey credentials")
 	}
 	var normalizedExtra map[string]any
 	if input.Extra != nil {

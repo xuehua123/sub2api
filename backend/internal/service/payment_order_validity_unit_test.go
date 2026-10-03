@@ -188,6 +188,7 @@ func TestCreateSubscriptionOrderUsesEffectivePlanGroupAsLegacyAnchor(t *testing.
 		plan.Price,
 		0,
 		plan.Price,
+		0,
 		nil,
 	)
 	require.NoError(t, err)
