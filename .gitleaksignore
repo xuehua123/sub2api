@@ -3,6 +3,10 @@
 # Do not add path-wide or rule-wide exceptions. Current-tree fingerprints are
 # duplicated for the staged-index and worktree snapshots; history fingerprints
 # include their commit SHA, so any new commit containing a secret remains blocked.
+index/README.md:curl-auth-header:847
+index/README_CN.md:curl-auth-header:763
+worktree/README.md:curl-auth-header:847
+worktree/README_CN.md:curl-auth-header:763
 074bd0dfdace3f523125e08609bc7c9ee3f6134d:backend/internal/service/gateway_beta_test.go:generic-api-key:36
 074bd0dfdace3f523125e08609bc7c9ee3f6134d:backend/internal/service/gateway_beta_test.go:generic-api-key:40
 074bd0dfdace3f523125e08609bc7c9ee3f6134d:backend/internal/service/gateway_beta_test.go:generic-api-key:42
