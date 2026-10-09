@@ -240,3 +240,8 @@ index/README_CN.md:curl-auth-header:761
 worktree/README_CN.md:curl-auth-header:761
 d1ba57977d2dfec66d06438a9e8863ae72935c6c:README.md:curl-auth-header:840
 d1ba57977d2dfec66d06438a9e8863ae72935c6c:README_CN.md:curl-auth-header:756
+
+# Upstream recorded routing case_keys_sha256 is a deterministic test-case hash.
+index/backend/internal/service/testdata/upstream_protocol_routing_main_golden.json:generic-api-key:4
+worktree/backend/internal/service/testdata/upstream_protocol_routing_main_golden.json:generic-api-key:4
+387ee20ed11bc221198714d15fcedcf8c134e9d0:backend/internal/service/testdata/upstream_protocol_routing_main_golden.json:generic-api-key:4

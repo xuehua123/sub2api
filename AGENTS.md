@@ -170,8 +170,8 @@ Without `-tags embed`, the binary will NOT serve the frontend UI.
 
 ## Go Version
 
-- `go.mod` declares **go 1.27.0** (source of truth)
-- CI verifies `go1.27.0` exactly
+- `go.mod` declares **go 1.27.2** (source of truth)
+- CI verifies `go1.27.2` exactly
 - README badges must match the `go.mod` version.
 
 ## Testing Quirks

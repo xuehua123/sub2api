@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
@@ -2167,6 +2168,13 @@ type openAIResponsesWSUsageLogCase struct {
 	openAICompactSupported    *bool
 	nativeCompactionFallback  bool
 	rejectTurn                int
+	upstreamCyberFailureTurn  int
+	// apiKeyService 非 nil 时模拟 API Key 认证中间件：连接认证快照经它按
+	// apiKeyCredential 取得，并把其分组放入请求 ctx；handler 也使用它。
+	apiKeyService    *service.APIKeyService
+	apiKeyCredential string
+	// accountRateMultiplier 覆盖账号倍率（利润门测试用）。
+	accountRateMultiplier *float64
 }
 
 type openAIResponsesWSUsageLogResult struct {
@@ -3189,13 +3197,19 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 				}
 			}
 
+			responseType := "response.completed"
+			response := map[string]any{
+				"id":    "resp_usage_e2e_" + strconv.Itoa(turn),
+				"model": gjson.GetBytes(payload, "model").String(),
+				"usage": map[string]any{"input_tokens": 2, "output_tokens": 1},
+			}
+			if turn == tc.upstreamCyberFailureTurn {
+				responseType = "response.failed"
+				response["status"] = "failed"
+				response["error"] = map[string]any{"code": "cyber_policy", "message": "blocked by upstream policy"}
+			}
 			responsePayload, marshalErr := json.Marshal(map[string]any{
-				"type": "response.completed",
-				"response": map[string]any{
-					"id":    "resp_usage_e2e_" + strconv.Itoa(turn),
-					"model": gjson.GetBytes(payload, "model").String(),
-					"usage": map[string]any{"input_tokens": 2, "output_tokens": 1},
-				},
+				"type": responseType, "response": response,
 			})
 			if marshalErr != nil {
 				upstreamErrCh <- marshalErr
@@ -3259,6 +3273,7 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 	if tc.accountPlatform != "" {
 		account.Platform = tc.accountPlatform
 	}
+	account.RateMultiplier = tc.accountRateMultiplier
 	if strings.TrimSpace(tc.ingressMode) != "" {
 		account.Extra["openai_apikey_responses_websockets_v2_mode"] = tc.ingressMode
 	}
@@ -3381,6 +3396,12 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 		User:    &service.User{ID: 1701, Status: service.StatusActive},
 	}
 	apiKey.Group = tc.group
+	if tc.apiKeyService != nil {
+		h.apiKeyService = tc.apiKeyService
+		authKey, err := tc.apiKeyService.GetByKey(context.Background(), tc.apiKeyCredential)
+		require.NoError(t, err)
+		apiKey = authKey
+	}
 	if tc.simpleModeRejectAtRead > 0 {
 		apiKey.RateLimit5h = 1
 	}
@@ -3388,6 +3409,9 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 	router.Use(func(c *gin.Context) {
 		c.Set(string(middleware.ContextKeyAPIKey), apiKey)
 		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: apiKey.User.ID, Concurrency: 1})
+		if tc.apiKeyService != nil && apiKey.Group != nil {
+			c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), ctxkey.Group, apiKey.Group))
+		}
 		c.Next()
 	})
 	router.GET("/openai/v1/responses", h.ResponsesWebSocket)
@@ -3438,7 +3462,12 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 			return false
 		}
 		require.NoError(t, readErr)
-		require.Equal(t, "response.completed", gjson.GetBytes(event, "type").String())
+		if turn == tc.upstreamCyberFailureTurn {
+			require.Equal(t, "response.failed", gjson.GetBytes(event, "type").String())
+			require.Equal(t, "cyber_policy", gjson.GetBytes(event, "response.error.code").String())
+		} else {
+			require.Equal(t, "response.completed", gjson.GetBytes(event, "type").String())
+		}
 		clientEvents = append(clientEvents, append([]byte(nil), event...))
 		return true
 	}
@@ -3471,6 +3500,10 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 		case <-time.After(3 * time.Second):
 			t.Fatal("等待 WebSocket usage log 写入超时")
 		}
+	}
+	if tc.upstreamCyberFailureTurn > 0 {
+		require.Never(t, func() bool { return len(usageRepo.created) > 0 }, 100*time.Millisecond, time.Millisecond,
+			"a cyber failure must produce exactly one usage row for its turn")
 	}
 
 	upstreamPayloads := make([][]byte, 0, successfulTurnCount)
