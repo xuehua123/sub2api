@@ -128,8 +128,8 @@ func ProvideHTTPServer(cfg *config.Config, router *gin.Engine) *http.Server {
 	if globalMaxSize <= 0 {
 		globalMaxSize = cfg.Gateway.MaxBodySize
 	}
+	httpHandler = provideResponsesIngress(httpHandler, globalMaxSize, responsesErrorDrainTimeout)
 	if globalMaxSize > 0 {
-		httpHandler = http.MaxBytesHandler(httpHandler, globalMaxSize)
 		log.Printf("Global max request body size: %d bytes (%.2f MB)", globalMaxSize, float64(globalMaxSize)/(1<<20))
 	}
 
