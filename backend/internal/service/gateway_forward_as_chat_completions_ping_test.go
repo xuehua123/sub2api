@@ -81,10 +81,14 @@ func TestHandleCCStreamingFromAnthropic_PingFlushesImmediately(t *testing.T) {
 		}
 	}
 	var body string
-	send := func(eventType, payload string) {
+	writeEvent := func(eventType, payload string) {
 		t.Helper()
 		_, err := io.WriteString(upstream, "event: "+eventType+"\ndata: "+payload+"\n\n")
 		require.NoError(t, err)
+	}
+	send := func(eventType, payload string) {
+		t.Helper()
+		writeEvent(eventType, payload)
 		body = awaitFlush()
 	}
 	ping := func() {
@@ -97,13 +101,15 @@ func TestHandleCCStreamingFromAnthropic_PingFlushesImmediately(t *testing.T) {
 	ping()
 	ping()
 	send("message_start", `{"type":"message_start","message":{"id":"msg_ping","role":"assistant","content":[],"usage":{"input_tokens":10}}}`)
-	send("content_block_start", `{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`)
+	// These events update converter state without emitting Chat Completions
+	// chunks. The fork flushes payload chunks and heartbeats immediately.
+	writeEvent("content_block_start", `{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`)
 	send("content_block_delta", `{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hello"}}`)
 	require.Contains(t, body, `"content":"hello"`)
 	ping()
 	send("content_block_delta", `{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" world"}}`)
 	require.Contains(t, body, `"content":" world"`)
-	send("message_delta", `{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":7}}`)
+	writeEvent("message_delta", `{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":7}}`)
 	send("message_stop", `{"type":"message_stop"}`)
 	ping()
 	require.NotContains(t, body, "[DONE]")
