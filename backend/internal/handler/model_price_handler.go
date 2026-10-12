@@ -23,6 +23,7 @@ type ModelPriceHandler struct {
 	pricingService       modelPriceCatalog
 	settingService       *service.SettingService
 	paymentConfigService *service.PaymentConfigService
+	compositeResolver    *service.CompositeRouteResolver
 }
 
 type modelPriceCatalog interface {
@@ -44,6 +45,7 @@ func NewModelPriceHandler(
 	pricingService *service.PricingService,
 	settingService *service.SettingService,
 	paymentConfigService *service.PaymentConfigService,
+	compositeResolver *service.CompositeRouteResolver,
 ) *ModelPriceHandler {
 	return &ModelPriceHandler{
 		channelService:       channelService,
@@ -53,6 +55,7 @@ func NewModelPriceHandler(
 		pricingService:       pricingService,
 		settingService:       settingService,
 		paymentConfigService: paymentConfigService,
+		compositeResolver:    compositeResolver,
 	}
 }
 
@@ -84,6 +87,8 @@ type modelPriceGroupDTO struct {
 	BestPlan             *modelPricePlanDTO `json:"best_plan,omitempty"`
 	modelPricing         []service.ChannelModelPricing
 	longContextPricing   bool
+	mediaGroup           *service.Group
+	routeDecisions       []service.CompositeRouteDecision
 }
 
 type modelPriceValueDTO struct {
@@ -138,6 +143,7 @@ type modelPriceCatalogPriceDTO struct {
 
 type modelPriceModelDTO struct {
 	CatalogPrice    *modelPriceCatalogPriceDTO     `json:"catalog_price"`
+	Availability    string                         `json:"availability,omitempty"`
 	Name            string                         `json:"name"`
 	Platform        string                         `json:"platform"`
 	Provider        string                         `json:"provider"`
@@ -258,6 +264,10 @@ func (h *ModelPriceHandler) List(c *gin.Context) {
 	}
 	accountsByGroup, err := h.modelPriceAccountsByGroup(c.Request.Context(), groupDTOs)
 	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	if err := h.loadModelPriceCompositeRoutes(c.Request.Context(), groupDTOs, channels, accountsByGroup); err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
@@ -485,6 +495,7 @@ func (h *ModelPriceHandler) groupDTOs(c *gin.Context, groups []service.Group, us
 			IsExclusive:          g.IsExclusive,
 			modelPricing:         append([]service.ChannelModelPricing(nil), g.ModelPricing...),
 			longContextPricing:   g.LongContextPricingEnabled,
+			mediaGroup:           &g,
 		})
 	}
 	sort.SliceStable(out, func(i, j int) bool {
@@ -566,7 +577,7 @@ func applyModelPriceGroupUsage(groups []modelPriceGroupDTO, channels []service.A
 			}
 			channelCounts[group.ID]++
 			for _, model := range ch.SupportedModels {
-				if model.Platform != platform || strings.TrimSpace(model.Name) == "" {
+				if !modelPricePlatformMatches(platform, model.Platform) || strings.TrimSpace(model.Name) == "" {
 					continue
 				}
 				if modelPriceModelHidden(group.ID, strings.TrimSpace(model.Name), hiddenModels, includeHiddenModels) {
@@ -602,7 +613,12 @@ func applyModelPriceGroupUsage(groups []modelPriceGroupDTO, channels []service.A
 		if groups[i].ChannelCount == 0 {
 			groups[i].ChannelCount = accountCounts[groups[i].ID]
 		}
-		groups[i].ModelCount = len(modelNamesByGroup[groups[i].ID])
+		groups[i].ModelCount = 0
+		for _, agg := range collectModelPriceAggregates(channels, accountsByGroup[groups[i].ID], groups[i]) {
+			if !modelPriceModelHidden(groups[i].ID, agg.name, hiddenModels, includeHiddenModels) {
+				groups[i].ModelCount++
+			}
+		}
 	}
 }
 
@@ -642,13 +658,13 @@ func buildModelPriceGroupOverview(groups []modelPriceGroupDTO, channels []servic
 			channelCountsByGroup[group.ID]++
 			platform := platformByGroup[group.ID]
 			for _, model := range ch.SupportedModels {
-				if model.Platform != platform || strings.TrimSpace(model.Name) == "" {
+				if !modelPricePlatformMatches(platform, model.Platform) || strings.TrimSpace(model.Name) == "" {
 					continue
 				}
 				if modelPriceModelHidden(group.ID, strings.TrimSpace(model.Name), hiddenModels, includeHiddenModels) {
 					continue
 				}
-				key := strings.ToLower(model.Platform + "\x00" + strings.TrimSpace(model.Name))
+				key := modelPriceAggregateKey(platform, model.Platform, model.Name)
 				byCategory[category].models[key] = struct{}{}
 			}
 		}
@@ -669,8 +685,16 @@ func buildModelPriceGroupOverview(groups []modelPriceGroupDTO, channels []servic
 				if modelPriceModelHidden(groupID, model, hiddenModels, includeHiddenModels) {
 					continue
 				}
-				key := strings.ToLower(platform + "\x00" + model)
+				key := modelPriceAggregateKey(platform, modelPriceAccountPlatform(account, platform), model)
 				byCategory[category].models[key] = struct{}{}
+			}
+		}
+	}
+	for _, group := range groups {
+		category := categoryByGroup[group.ID]
+		for _, agg := range collectModelPriceAggregates(channels, accountsByGroup[group.ID], group) {
+			if !modelPriceModelHidden(group.ID, agg.name, hiddenModels, includeHiddenModels) {
+				byCategory[category].models[modelPriceAggregateKey(group.Platform, agg.platform, agg.name)] = struct{}{}
 			}
 		}
 	}
@@ -857,6 +881,8 @@ type modelAggregate struct {
 	channelBacked         bool
 	billingModelAmbiguous bool
 	anthropicFastEnabled  bool
+	configuredOnly        bool
+	catalogOnly           bool
 }
 
 func (h *ModelPriceHandler) modelsForGroup(channels []service.AvailableChannel, accounts []service.Account, group modelPriceGroupDTO, usdCNYRate float64, includeCatalog bool, customPrices map[string]service.ModelPriceCustomPrice) []modelPriceModelDTO {
@@ -871,8 +897,19 @@ func (h *ModelPriceHandler) modelsForGroup(channels []service.AvailableChannel, 
 		if billingModel == "" {
 			billingModel = agg.name
 		}
-		anthropicRoute := strings.EqualFold(strings.TrimSpace(group.Platform), service.PlatformAnthropic)
-		agg.anthropicFastEnabled = modelPriceDirectAnthropicFastEnabled(accounts, group.Platform, agg.name, billingModel, agg.channelBacked)
+		routePlatform := group.Platform
+		fastAccounts := accounts
+		if group.Platform == service.PlatformComposite {
+			routePlatform = agg.platform
+			fastAccounts = nil
+			for _, account := range accounts {
+				if account.Platform == routePlatform {
+					fastAccounts = append(fastAccounts, account)
+				}
+			}
+		}
+		anthropicRoute := strings.EqualFold(strings.TrimSpace(routePlatform), service.PlatformAnthropic)
+		agg.anthropicFastEnabled = modelPriceDirectAnthropicFastEnabled(fastAccounts, routePlatform, agg.name, billingModel, agg.channelBacked)
 		var groupPricing *service.ChannelModelPricing
 		var matched bool
 		if agg.billingModelAmbiguous {
@@ -930,6 +967,7 @@ func (h *ModelPriceHandler) modelsForGroup(channels []service.AvailableChannel, 
 			}
 		}
 		model := h.toModelPriceDTO(agg, group, usdCNYRate)
+		model = modelPriceConfiguredMedia(model, agg, group, usdCNYRate)
 		if custom, ok := customPrices[service.ModelPriceCustomPriceKey(group.ID, agg.name)]; ok && custom.HasPrice() {
 			model = applyModelPriceCustomPrice(model, custom, usdCNYRate)
 		}
@@ -943,13 +981,17 @@ func (h *ModelPriceHandler) modelsForGroup(channels []service.AvailableChannel, 
 
 func collectModelPriceAggregates(channels []service.AvailableChannel, accounts []service.Account, group modelPriceGroupDTO) map[string]*modelAggregate {
 	aggregates := make(map[string]*modelAggregate)
+	internalTargets := map[string]struct{}{}
 	for _, ch := range channels {
 		if ch.Status != service.StatusActive || !channelHasGroup(ch, group.ID) {
 			continue
 		}
 		for _, m := range ch.SupportedModels {
-			if m.Platform != group.Platform || strings.TrimSpace(m.Name) == "" {
+			if !modelPricePlatformMatches(group.Platform, m.Platform) || strings.TrimSpace(m.Name) == "" {
 				continue
+			}
+			if !strings.EqualFold(m.Name, m.BillingModel) {
+				internalTargets[strings.ToLower(strings.TrimSpace(m.BillingModel))] = struct{}{}
 			}
 			effectivePricing := m.Pricing
 			effectiveSource := m.PricingSource
@@ -960,7 +1002,7 @@ func collectModelPriceAggregates(channels []service.AvailableChannel, accounts [
 				}
 			}
 			effectiveBillingMode := modelPriceEffectiveBillingMode(effectivePricing)
-			key := strings.ToLower(m.Platform + "\x00" + m.Name)
+			key := modelPriceAggregateKey(group.Platform, m.Platform, m.Name)
 			agg, ok := aggregates[key]
 			if !ok {
 				agg = &modelAggregate{
@@ -981,6 +1023,9 @@ func collectModelPriceAggregates(channels []service.AvailableChannel, accounts [
 				// when any billable part of the channel projection differs.
 				agg.billingModelAmbiguous = true
 			}
+			if agg.platform != m.Platform {
+				agg.billingModelAmbiguous = true
+			}
 			agg.channelNames[ch.Name] = struct{}{}
 		}
 	}
@@ -999,19 +1044,23 @@ func collectModelPriceAggregates(channels []service.AvailableChannel, accounts [
 			continue
 		}
 		for _, entry := range accountModelPriceEntries(account, group.Platform) {
-			key := strings.ToLower(group.Platform + "\x00" + entry.displayName)
+			if !strings.EqualFold(entry.displayName, entry.billingModel) {
+				internalTargets[strings.ToLower(entry.billingModel)] = struct{}{}
+			}
+			platform := modelPriceAccountPlatform(account, group.Platform)
+			key := modelPriceAggregateKey(group.Platform, platform, entry.displayName)
 			agg, ok := aggregates[key]
 			if !ok {
 				agg = &modelAggregate{
 					name:         entry.displayName,
-					platform:     group.Platform,
+					platform:     platform,
 					billingModel: entry.billingModel,
 					billingMode:  string(service.BillingModeToken),
 					channelNames: make(map[string]struct{}),
 					accountOnly:  true,
 				}
 				aggregates[key] = agg
-			} else if agg.accountOnly && !strings.EqualFold(agg.billingModel, entry.billingModel) {
+			} else if agg.accountOnly && (!strings.EqualFold(agg.billingModel, entry.billingModel) || agg.platform != platform) {
 				agg.billingModelAmbiguous = true
 			}
 			if agg.accountOnly && entry.ambiguous {
@@ -1020,6 +1069,8 @@ func collectModelPriceAggregates(channels []service.AvailableChannel, accounts [
 			agg.channelNames[account.Name] = struct{}{}
 		}
 	}
+	seedModelPriceConfiguredModels(aggregates, group, internalTargets)
+	applyModelPriceCompositeRoutes(aggregates, group, accounts)
 	return aggregates
 }
 
@@ -1033,7 +1084,8 @@ func (h *ModelPriceHandler) seedCatalogModelsForGroup(aggregates map[string]*mod
 			if name == "" || !catalogModelMatchesGroupPlatform(name, group.Platform) {
 				continue
 			}
-			key := strings.ToLower(group.Platform + "\x00" + name)
+			platform := modelPriceCatalogPlatform(group.Platform, provider, name)
+			key := modelPriceAggregateKey(group.Platform, platform, name)
 			if _, ok := aggregates[key]; ok {
 				continue
 			}
@@ -1043,10 +1095,11 @@ func (h *ModelPriceHandler) seedCatalogModelsForGroup(aggregates map[string]*mod
 			}
 			aggregates[key] = &modelAggregate{
 				name:         name,
-				platform:     group.Platform,
+				platform:     platform,
 				billingModel: name,
 				billingMode:  billingMode,
 				channelNames: make(map[string]struct{}),
+				catalogOnly:  true,
 			}
 		}
 	}
@@ -1063,7 +1116,7 @@ func catalogProvidersForPlatform(platform string) []string {
 	case service.PlatformAntigravity:
 		return []string{"anthropic", "google", "gemini", "vertex_ai-language-models", "vertex_ai-embedding-models"}
 	default:
-		return nil
+		return modelPriceRegistryCatalogProviders(platform)
 	}
 }
 
@@ -1090,7 +1143,7 @@ func (h *ModelPriceHandler) toModelPriceDTO(agg *modelAggregate, group modelPric
 		source = "unknown"
 	}
 	officialMissing := true
-	anthropicRoute := strings.EqualFold(strings.TrimSpace(group.Platform), service.PlatformAnthropic)
+	anthropicRoute := strings.EqualFold(strings.TrimSpace(agg.platform), service.PlatformAnthropic)
 	if !agg.billingModelAmbiguous && agg.pricingSource != service.PricingSourceGroup && h.pricingService != nil {
 		billingModel := strings.TrimSpace(agg.billingModel)
 		if billingModel == "" {
@@ -1130,6 +1183,7 @@ func (h *ModelPriceHandler) toModelPriceDTO(agg *modelAggregate, group modelPric
 
 	return modelPriceModelDTO{
 		CatalogPrice:    h.catalogPriceForModel(agg),
+		Availability:    modelPriceAvailability(agg),
 		Name:            agg.name,
 		Platform:        agg.platform,
 		Provider:        provider,
@@ -1274,6 +1328,9 @@ func modelPriceAccountUsableForGroup(account service.Account, groupPlatform stri
 	}
 	accountPlatform := strings.ToLower(strings.TrimSpace(account.Platform))
 	groupPlatform = strings.ToLower(strings.TrimSpace(groupPlatform))
+	if groupPlatform == service.PlatformComposite {
+		return modelPricePlatformMatches(groupPlatform, accountPlatform)
+	}
 	if accountPlatform == groupPlatform {
 		return true
 	}

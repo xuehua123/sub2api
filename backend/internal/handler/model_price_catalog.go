@@ -15,6 +15,7 @@ func (h *ModelPriceHandler) catalogPriceForModel(agg *modelAggregate) *modelPric
 	if name == "" {
 		name = agg.name
 	}
+	name = modelPriceIdentifiedCatalogName(h.pricingService, agg.platform, name)
 	return catalogPriceFromPricing(name, h.pricingService.GetIdentifiedModelPricing(name))
 }
 

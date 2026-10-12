@@ -68,13 +68,18 @@ afterEach(() => {
   mounts.splice(0).forEach((w) => w.unmount())
 })
 describe('model price workspaces', () => {
-  it('shows official USD values rather than discounted CNY values', async () => {
+  it('defaults to group CNY display prices and switches to original catalog USD prices', async () => {
     const w=mountView();await enter(w)
-    const row=w.get('[data-model-name="test-model"] .price-main-values')
-    expect(row.text()).toContain('US$3')
-    expect(row.text()).toContain('US$12')
-    expect(row.text()).not.toContain('4.2')
-    expect(row.text()).not.toContain('16.8')
+    const row=()=>w.get('[data-model-name="test-model"] .price-main-values')
+    expect(row().text()).toContain('4.2')
+    expect(row().text()).toContain('16.8')
+    expect(row().text()).not.toContain('US$')
+    expect(w.get('[data-testid="price-basis-display"]').attributes('aria-selected')).toBe('true')
+    await w.get('[data-testid="price-basis-catalog"]').trigger('click')
+    expect(row().text()).toContain('US$3')
+    expect(row().text()).toContain('US$12')
+    expect(row().text()).not.toContain('4.2')
+    expect(row().text()).not.toContain('16.8')
   })
   it('defaults to browsing and keeps admin controls in management', async () => {
     const w = mountView()
@@ -134,9 +139,9 @@ describe('model price workspaces', () => {
   it('filters source, search and unit without duplicate mobile rows', async () => {
     const w = mountView()
     await enter(w)
-    await w.get('[data-testid="price-source-filter"]').setValue('unknown')
+    await w.get('[data-testid="price-source-filter"]').setValue('fallback')
     expect(w.findAll('[data-testid="model-price-row"]')).toHaveLength(1)
-    expect(w.text()).toContain('官方原价缺失')
+    expect(w.text()).toContain('官方价待补充')
     await w.get('[data-testid="model-search"]').setValue('absent')
     expect(w.findAll('[data-testid="model-price-row"]')).toHaveLength(0)
   })
@@ -197,6 +202,8 @@ describe('model price workspaces', () => {
     await w.findAll('input[type="checkbox"]')[0].setValue(true)
     expect(w.text()).toContain('Fast')
     expect(w.text()).toContain('缓存写入')
+    expect(w.text()).toContain('¥0')
+    await w.get('[data-testid="price-basis-catalog"]').trigger('click')
     expect(w.text()).toContain('US$0')
     expect(w.text()).toContain('官方原价')
   })
@@ -208,11 +215,13 @@ describe('model price workspaces', () => {
     expect(w.get('[data-model-name="claude"]').exists()).toBe(true)
     expect((w.get('[data-testid="platform-filter"]').element as HTMLSelectElement).value).toBe('')
   })
-  it('keeps management prices and sources separate from official browsing', async () => {
+  it('keeps management prices and sources separate from the selected official basis', async () => {
     const custom=model({pricing_source:'custom',custom_price:{input_usd_per_m:99}})
     custom.actual={...custom.actual,input_usd_per_m:99,input_cny_per_m:693}
     api.getModelPrices.mockImplementation(async p=>response({selected_group_id:p.group_id||null,models:p.group_id?[custom]:[]}))
     const w=mountView();await enter(w)
+    expect(w.get('.price-main-values').text()).toContain('693')
+    await w.get('[data-testid="price-basis-catalog"]').trigger('click')
     expect(w.get('.price-main-values').text()).toContain('US$3')
     await w.get('[data-testid="price-manage-tab"]').trigger('click');await flushPromises()
     expect(w.get('.price-main-values').text()).toContain('693')
@@ -220,6 +229,79 @@ describe('model price workspaces', () => {
     expect(w.findAll('[data-testid="model-price-row"]')).toHaveLength(1)
     await w.findAll('[role="tab"]').find(tab=>tab.text()==='价格查询')!.trigger('click');await flushPromises()
     expect(w.get('.price-main-values').text()).toContain('US$3')
+  })
+
+  it('preserves configured and custom group prices without catalog entries while official mode stays unknown', async () => {
+    auth.isAdmin = false
+    const configured = model({name:'grok-alias',catalog_price:null,official_missing:false})
+    const custom = model({name:'custom-alias',catalog_price:null,pricing_source:'display_override',custom_price:null})
+    custom.actual = {...custom.actual,input_cny_per_m:0.3,output_cny_per_m:1.5}
+    api.getModelPrices.mockImplementation(async p=>response({selected_group_id:p.group_id||null,models:p.group_id?[configured,custom]:[]}))
+    const w=mountView();await enter(w)
+    const row=(name:string)=>w.get('[data-model-name="'+name+'"]')
+    expect(row('grok-alias').get('.price-main-values').text()).toContain('4.2')
+    expect(row('custom-alias').get('.price-main-values').text()).toContain('0.3')
+    expect(row('custom-alias').text()).toContain('展示价覆盖 · 非结算承诺')
+    expect(row('grok-alias').text()).toContain('官方价待补充')
+    await w.get('[data-testid="price-state-filter"]').setValue('baseline')
+    expect(w.findAll('[data-testid="model-price-row"]')).toHaveLength(2)
+    await w.get('[data-testid="price-basis-catalog"]').trigger('click')
+    expect(row('grok-alias').get('.price-main-values').text()).toContain('单位待确认')
+    expect(row('custom-alias').get('.price-main-values').text()).not.toContain('0.3')
+    await w.get('[data-testid="price-basis-display"]').trigger('click')
+    expect(row('custom-alias').get('.price-main-values').text()).toContain('1.5')
+  })
+
+  it('uses the selected basis consistently for sorting and calculator estimates', async () => {
+    const a=model({name:'a'})
+    const b=model({name:'b'})
+    a.actual = {...a.actual,input_cny_per_m:14,output_cny_per_m:0}
+    b.actual = {...b.actual,input_cny_per_m:7,output_cny_per_m:0}
+    a.catalog_price!.price = {...a.official,input_usd_per_m:1,output_usd_per_m:0}
+    b.catalog_price!.price = {...b.official,input_usd_per_m:2,output_usd_per_m:0}
+    api.getModelPrices.mockImplementation(async p=>response({selected_group_id:p.group_id||null,models:p.group_id?[a,b]:[]}))
+    const w=mountView();await enter(w)
+    await w.get('[data-testid="price-sort"]').setValue('input')
+    expect(w.findAll('[data-testid="model-price-row"]')[0].attributes('data-model-name')).toBe('b')
+    await w.findAll('button').find(button=>button.text()==='费用试算')!.trigger('click')
+    await w.get('[data-testid="calculator-input"]').setValue(1000000)
+    expect(w.get('[data-testid="calculator-total"]').text()).toContain('7')
+    expect(w.get('[data-testid="calculator-price-basis"]').text()).toContain('人民币展示价 · 每百万 tokens')
+    await w.get('[data-testid="price-basis-catalog"]').trigger('click')
+    expect(w.find('[data-testid="model-price-calculator"]').exists()).toBe(false)
+    await w.get('[data-testid="price-sort"]').setValue('input')
+    expect(w.findAll('[data-testid="model-price-row"]')[0].attributes('data-model-name')).toBe('a')
+    await w.findAll('button').find(button=>button.text()==='费用试算')!.trigger('click')
+    await w.get('[data-testid="calculator-input"]').setValue(1000000)
+    expect(w.get('[data-testid="calculator-total"]').text()).toContain('7')
+    expect(w.get('[data-testid="calculator-price-basis"]').text()).toContain('官方目录价折合人民币')
+  })
+
+  it('keeps completely missing group prices pending while preserving explicit free prices', async () => {
+    const missing = model({ name: 'missing', catalog_price: null })
+    missing.actual = {...missing.actual,input_cny_per_m:null,output_cny_per_m:null}
+    const free = model({ name: 'free', catalog_price: null })
+    free.actual = {...free.actual,input_cny_per_m:0,output_cny_per_m:0}
+    api.getModelPrices.mockImplementation(async p=>response({selected_group_id:p.group_id||null,models:p.group_id?[missing,free]:[]}))
+    const w=mountView();await enter(w)
+    expect(w.get('[data-model-name="missing"] .price-main-values').text()).toContain('待定价')
+    expect(w.get('[data-model-name="missing"] .price-main-values').text()).not.toContain('¥0')
+    expect(w.get('[data-model-name="free"] .price-main-values').text()).toContain('¥0')
+    await w.get('[data-testid="price-state-filter"]').setValue('missing')
+    expect(w.findAll('[data-testid="model-price-row"]')).toHaveLength(1)
+    expect(w.get('[data-model-name="missing"]').exists()).toBe(true)
+  })
+
+  it('shows mixed model platforms from composite groups and keeps configured-only availability explicit', async () => {
+    const groups=response().groups.map(g=>g.id===46?{...g,platform:'composite',name:'国模'}:g)
+    const domestic=[model({name:'deepseek-v4-pro',platform:'deepseek',catalog_price:null}),model({name:'qwen-max',platform:'openai',catalog_price:null,availability:'configured_only'})]
+    api.getModelPrices.mockImplementation(async p=>response({groups,selected_group_id:p.group_id||null,models:p.group_id?domestic:[]}))
+    const w=mountView();await enter(w)
+    expect(w.findAll('[data-testid="model-price-row"]')).toHaveLength(2)
+    expect(w.get('[data-model-name="qwen-max"] [data-testid="model-price-availability"]').text()).toContain('仅配置价格 · 可调用性待确认')
+    await w.get('[data-testid="platform-filter"]').setValue('deepseek')
+    expect(w.findAll('[data-testid="model-price-row"]')).toHaveLength(1)
+    expect(w.get('[data-model-name="deepseek-v4-pro"] .price-main-values').text()).toContain('4.2')
   })
 
   it('ignores stale group responses', async () => {
