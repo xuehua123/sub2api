@@ -1,6 +1,6 @@
 <template>
  <div class="plaza-catalog-table" data-testid="public-catalog-prices">
-  <p class="px-5 py-3 text-xs text-gray-500 dark:text-gray-400">官方目录原价 · USD，不含渠道、分组倍率或套餐折扣。</p>
+  <p class="px-5 py-3 text-xs text-gray-500 dark:text-gray-400">官方目录规范化参考价 · USD，不含渠道、分组倍率或套餐折扣；上游未提供原始币种字段。</p>
   <article v-for="model in models" :key="model.platform+':'+model.name" class="catalog-row" :data-model-name="model.name">
    <div class="catalog-primary"><strong>{{model.name}}</strong>
     <template v-if="model.catalog_price">
@@ -8,7 +8,7 @@
      <dl v-else><div><dt>{{model.catalog_price.billing_mode==='image'?'每张':'单位待确认'}}</dt><dd>{{model.catalog_price.billing_mode==='image'?money(model.catalog_price.price.per_request_usd,'USD'):'暂不可展示'}}</dd></div></dl>
     </template><span v-else class="text-sm text-gray-500">官方原价缺失</span>
    </div>
-   <details v-if="model.catalog_price" class="mt-2 text-xs"><summary>官方价格明细 · 缓存与阶梯</summary><p v-if="model.catalog_price.model!==model.name" class="mt-2">目录模型：{{model.catalog_price.model}}</p><div v-for="tier in tiers(model)" :key="tier.key" class="mt-3 overflow-auto"><p class="mb-2 font-medium">{{tier.label}}<span v-if="tier.threshold_tokens"> · 输入 &gt; {{tier.threshold_tokens}} tokens</span></p><table class="w-full text-left"><tbody><tr v-for="field in fields(model,tier.official)" :key="field.key"><td class="py-1">{{field.label}}</td><td class="py-1 text-right font-mono">{{money(tier.official[field.usd],'USD')}} / {{field.key==='quantity'?'张':'百万 tokens'}}</td></tr></tbody></table></div></details>
+   <details v-if="model.catalog_price" class="mt-2 text-xs"><summary>目录参考价明细 · 缓存与阶梯</summary><p v-if="model.catalog_price.model!==model.name" class="mt-2">目录模型：{{model.catalog_price.model}}</p><div v-for="tier in tiers(model)" :key="tier.key" class="mt-3 overflow-auto"><p class="mb-2 font-medium">{{tier.label}}<span v-if="tier.threshold_tokens"> · 输入 &gt; {{tier.threshold_tokens}} tokens</span></p><table class="w-full text-left"><tbody><tr v-for="field in fields(model,tier.official)" :key="field.key"><td class="py-1">{{field.label}}</td><td class="py-1 text-right font-mono">{{money(tier.official[field.usd],'USD')}} / {{field.key==='quantity'?'张':'百万 tokens'}}</td></tr></tbody></table></div></details>
   </article>
  </div>
 </template>

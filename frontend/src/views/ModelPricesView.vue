@@ -21,7 +21,7 @@
             <p class="price-page-description">
               {{ selectedGroup?.name || '选择分组' }} ·
               {{ filteredModels.length }} 个模型 ·
-              {{ manage && isAdmin ? '当前计费展示价 · CNY' : '官方目录原价 · USD' }}
+              {{ manage && isAdmin ? '当前分组展示价 · CNY 等值' : '官方目录规范化参考价 · USD' }}
             </p>
           </div>
           <div class="flex items-center gap-2">
@@ -46,7 +46,7 @@
                 :class="{ active: !manage }"
                 @click="manage = false"
               >
-                官方目录（USD）</button
+                官方目录参考价（USD）</button
               ><button
                 role="tab"
                 data-testid="price-manage-tab"
@@ -54,7 +54,7 @@
                 :class="{ active: manage }"
                 @click="manage = true"
               >
-                当前计费（CNY）
+                当前分组展示（CNY 等值）
               </button>
             </div>
             <button
@@ -80,11 +80,11 @@
         >
           <div>
             <p class="price-basis-kicker">当前价格口径</p>
-            <strong>{{ priceBasis === 'catalog' ? '官方目录原价（USD）' : '当前分组计费价（CNY）' }}</strong>
+            <strong>{{ priceBasis === 'catalog' ? '官方目录规范化参考价（USD）' : '当前分组展示价（CNY 等值）' }}</strong>
             <p>
               {{ priceBasis === 'catalog'
-                ? '官方目录价不包含分组倍率、套餐折扣或自定义展示价。'
-                : '当前分组计费价可能包含分组倍率或自定义展示价，是本分组的计费参考。' }}
+                ? '目录数据统一换算为 USD 展示；上游未提供原始币种字段，因此这里不是原币种复刻。'
+                : 'CNY 仅用于把当前分组价格换算成易读的展示等值；自定义展示价不改变网关实际结算价格。' }}
             </p>
           </div>
           <span class="price-basis-currency">{{ priceBasis === 'catalog' ? 'USD' : 'CNY' }}</span>
@@ -323,7 +323,7 @@
           </div>
         </div>
         <p class="py-3 text-xs text-gray-500">
-          {{manage && isAdmin ? '这里显示当前分组的计费展示价（CNY），可能包含分组倍率或自定义展示价；它不是官方目录价。' : '这里仅显示官方目录原价（USD），不叠加分组倍率、套餐折扣或渠道价。'}}
+          {{manage && isAdmin ? '这里显示当前分组展示价（CNY 等值），可能包含分组倍率或自定义展示价；网关实际结算仍按 USD 口径。' : '这里显示官方目录规范化参考价（USD），不叠加分组倍率、套餐折扣或渠道价；上游未提供原始币种字段。'}}
         </p>
         <div v-if="error" role="alert" class="py-8 text-center">
           <p>{{ error }}</p>
@@ -354,7 +354,7 @@
         </p>
         <section v-else aria-label="模型价格列表" class="price-catalog">
           <div class="price-catalog-heading">
-            <span>模型 / MODEL</span><span>{{manage && isAdmin ? '当前计费展示价 / CNY' : '官方目录原价 / USD'}}</span
+            <span>模型 / MODEL</span><span>{{manage && isAdmin ? '当前分组展示价 / CNY 等值' : '官方目录规范化参考价 / USD'}}</span
             ><span>价格来源</span><span></span>
           </div>
           <ModelPriceItem

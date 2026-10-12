@@ -37,6 +37,27 @@ func TestCatalogKeepsFreeImagePriceAndType(t *testing.T) {
 	require.Equal(t, "image", got.BillingMode)
 	require.Zero(t, *got.Price.PerRequestUSD)
 }
+
+func TestOfficialValuePreservesExplicitZeroAndOmitsAbsentCatalogFields(t *testing.T) {
+	zero := 0.0
+	input := 0.000003
+	p := &service.LiteLLMModelPricing{
+		CatalogPrices:           &service.CatalogPricingFields{Input: &input, Output: &zero, CacheRead: &zero},
+		InputCostPerToken:       input,
+		OutputCostPerToken:      zero,
+		CacheReadInputTokenCost: zero,
+	}
+
+	got := priceValueFromLiteLLM(p)
+	require.NotNil(t, got.InputUSDPerM)
+	require.InDelta(t, 3, *got.InputUSDPerM, 1e-9)
+	require.NotNil(t, got.OutputUSDPerM)
+	require.Zero(t, *got.OutputUSDPerM)
+	require.NotNil(t, got.CacheReadUSDPerM)
+	require.Zero(t, *got.CacheReadUSDPerM)
+	require.Nil(t, got.CacheWriteUSDPerM)
+}
+
 func TestPublicAndAuthenticatedCatalogUseSamePrice(t *testing.T) {
 	input := 0.000003
 	raw := &service.LiteLLMModelPricing{CatalogPrices: &service.CatalogPricingFields{Input: &input}}

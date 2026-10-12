@@ -1,7 +1,7 @@
 <template>
   <div data-testid="model-price-calculator" class="space-y-5">
     <h3 class="text-sm font-medium" data-testid="calculator-price-basis">
-      {{ (basis === 'display' ? '当前计费价 · CNY' : '官方目录价 · USD') + (model ? ' · 每' + unit(model) : '') }}
+      {{ (basis === 'display' ? '当前分组展示价 · CNY 等值' : '官方目录规范化参考价 · USD') + (model ? ' · 每' + unit(model) : '') }}
     </h3>
     <div class="grid gap-3 sm:grid-cols-2">
       <label class="text-sm"
@@ -50,7 +50,7 @@
       此档位仅在所用账号开启长上下文计费时适用。
     </p>
     <p class="text-xs text-gray-500">
-      {{basis==='display'?'当前分组计费价试算（CNY）':'官方目录价试算（USD）'}}，不发起请求、不扣费。Token
+      {{basis==='display'?'当前分组展示价试算（CNY 等值）':'官方目录规范化参考价试算（USD）'}}，不发起请求、不扣费。Token
       输入按未缓存、缓存读取、缓存写入分别填写，不能重复计入。
     </p>
     <div class="grid gap-3 sm:grid-cols-2">
@@ -88,7 +88,7 @@
       aria-live="polite"
     >
       <div class="flex flex-wrap items-center justify-between gap-2">
-        <span class="text-sm">{{basis==='display'?'预计扣费（CNY）':'官方目录费用（USD）'}}</span
+        <span class="text-sm">{{basis==='display'?'展示价试算（CNY 等值）':'目录参考费用（USD）'}}</span
         ><strong
           class="text-xl tabular-nums text-emerald-700 dark:text-emerald-300"
           data-testid="calculator-total"

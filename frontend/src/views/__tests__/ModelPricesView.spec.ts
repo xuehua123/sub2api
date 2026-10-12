@@ -218,7 +218,7 @@ describe('model price workspaces', () => {
     expect(w.get('.price-main-values').text()).toContain('693')
     await w.get('[data-testid="price-source-filter"]').setValue('custom')
     expect(w.findAll('[data-testid="model-price-row"]')).toHaveLength(1)
-    await w.findAll('[role="tab"]').find(tab=>tab.text()==='官方目录（USD）')!.trigger('click');await flushPromises()
+    await w.findAll('[role="tab"]').find(tab=>tab.text()==='官方目录参考价（USD）')!.trigger('click');await flushPromises()
     expect(w.get('.price-main-values').text()).toContain('US$3')
   })
 

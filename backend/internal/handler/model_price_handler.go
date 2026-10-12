@@ -1451,17 +1451,47 @@ func accountModelPriceEntries(account service.Account, groupPlatform string) []a
 }
 
 func priceValueFromLiteLLM(p *service.LiteLLMModelPricing) modelPriceValueDTO {
-	return modelPriceValueDTO{
-		InputUSDPerM:        perMillionPtr(p.InputCostPerToken),
-		ImageInputUSDPerM:   perMillionPtr(p.InputCostPerImageToken),
-		OutputUSDPerM:       perMillionPtr(p.OutputCostPerToken),
-		CacheWriteUSDPerM:   perMillionPtr(p.CacheCreationInputTokenCost),
-		CacheWrite5mUSDPerM: perMillionPtr(p.CacheCreationInputTokenCost),
-		CacheWrite1hUSDPerM: perMillionPtr(p.CacheCreationInputTokenCostAbove1hr),
-		CacheReadUSDPerM:    perMillionPtr(p.CacheReadInputTokenCost),
-		ImageOutputUSDPerM:  perMillionPtr(p.OutputCostPerImageToken),
-		PerRequestUSD:       nonZeroFloatPtr(p.OutputCostPerImage),
+	if p == nil {
+		return modelPriceValueDTO{}
 	}
+	return modelPriceValueDTO{
+		InputUSDPerM:        catalogOrLegacyPerMillion(p, catalogPriceValue(p, func(c *service.CatalogPricingFields) *float64 { return c.Input }), p.InputCostPerToken),
+		ImageInputUSDPerM:   catalogOrLegacyPerMillion(p, catalogPriceValue(p, func(c *service.CatalogPricingFields) *float64 { return c.ImageInput }), p.InputCostPerImageToken),
+		OutputUSDPerM:       catalogOrLegacyPerMillion(p, catalogPriceValue(p, func(c *service.CatalogPricingFields) *float64 { return c.Output }), p.OutputCostPerToken),
+		CacheWriteUSDPerM:   catalogOrLegacyPerMillion(p, catalogPriceValue(p, func(c *service.CatalogPricingFields) *float64 { return c.CacheWrite }), p.CacheCreationInputTokenCost),
+		CacheWrite5mUSDPerM: catalogOrLegacyPerMillion(p, catalogPriceValue(p, func(c *service.CatalogPricingFields) *float64 { return c.CacheWrite }), p.CacheCreationInputTokenCost),
+		CacheWrite1hUSDPerM: catalogOrLegacyPerMillion(p, catalogPriceValue(p, func(c *service.CatalogPricingFields) *float64 { return c.CacheWrite1h }), p.CacheCreationInputTokenCostAbove1hr),
+		CacheReadUSDPerM:    catalogOrLegacyPerMillion(p, catalogPriceValue(p, func(c *service.CatalogPricingFields) *float64 { return c.CacheRead }), p.CacheReadInputTokenCost),
+		ImageOutputUSDPerM:  catalogOrLegacyPerMillion(p, catalogPriceValue(p, func(c *service.CatalogPricingFields) *float64 { return c.ImageOutput }), p.OutputCostPerImageToken),
+		PerRequestUSD:       catalogOrLegacyFixed(p, catalogPriceValue(p, func(c *service.CatalogPricingFields) *float64 { return c.PerImage }), p.OutputCostPerImage),
+	}
+}
+
+func catalogPriceValue(p *service.LiteLLMModelPricing, selectValue func(*service.CatalogPricingFields) *float64) *float64 {
+	if p == nil || p.CatalogPrices == nil {
+		return nil
+	}
+	return selectValue(p.CatalogPrices)
+}
+
+func catalogOrLegacyPerMillion(p *service.LiteLLMModelPricing, catalog *float64, legacy float64) *float64 {
+	if p != nil && p.CatalogPrices != nil {
+		if catalog == nil {
+			return nil
+		}
+		return catalogScaled(catalog, 1e6)
+	}
+	return perMillionPtr(legacy)
+}
+
+func catalogOrLegacyFixed(p *service.LiteLLMModelPricing, catalog *float64, legacy float64) *float64 {
+	if p != nil && p.CatalogPrices != nil {
+		if catalog == nil {
+			return nil
+		}
+		return catalogScaled(catalog, 1)
+	}
+	return nonZeroFloatPtr(legacy)
 }
 
 func priceTiersFromChannel(p *service.ChannelModelPricing) []modelPriceTierDTO {
