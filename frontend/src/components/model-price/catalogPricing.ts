@@ -3,12 +3,12 @@ import {validPrice,priceFields} from './pricing'
 
 // An old server may omit catalog_price. Never substitute the overridden
 // historical "official" field, which is actually the runtime billing baseline.
-export function catalogModel(model:ModelPriceModel,exchangeRate:number):ModelPriceModel {
+export function catalogModel(model:ModelPriceModel,_exchangeRate?:number):ModelPriceModel {
  const catalog=model.catalog_price
  const empty:ModelPriceValue={input_usd_per_m:null,output_usd_per_m:null,cache_write_usd_per_m:null,cache_read_usd_per_m:null,image_output_usd_per_m:null,per_request_usd:null}
  const convert=(price:ModelPriceValue):ModelPriceActual=>{
   const actual={} as ModelPriceActual
-  for(const f of priceFields){const usd=price[f.usd];actual[f.usd]=validPrice(usd)?usd:null;actual[f.cny]=validPrice(usd)&&validPrice(exchangeRate)&&exchangeRate>0?usd*exchangeRate:null}
+  for(const f of priceFields){const usd=price[f.usd];actual[f.usd]=validPrice(usd)?usd:null;actual[f.cny]=null}
   return actual
  }
  const price=catalog?.price||empty

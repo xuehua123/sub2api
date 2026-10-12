@@ -12,7 +12,7 @@
       <main id="price-main" class="price-workspace">
         <div class="price-breadcrumb">
           <a href="/home">首页</a><span>/</span><span>模型与价格</span
-          ><span class="price-catalog-marker"><i></i> {{ currentBasis === 'display' ? 'GROUP PRICING' : 'OFFICIAL CATALOG' }}</span>
+          ><span class="price-catalog-marker"><i></i> OFFICIAL CATALOG</span>
         </div>
         <header class="price-page-heading">
           <div>
@@ -20,7 +20,7 @@
             <h1 class="price-title">模型价格</h1>
             <p class="price-page-description">
               {{ selectedGroup?.name || '选择分组' }} ·
-              {{ filteredModels.length }} 个模型 · {{ currentBasis === 'display' ? '人民币展示价 · CNY' : '官方目录价 · USD' }}
+              {{ filteredModels.length }} 个模型 · {{ manage && isAdmin ? '展示价格 · CNY' : '官方原价 · USD' }}
             </p>
           </div>
           <div class="flex items-center gap-2">
@@ -80,22 +80,6 @@
           :save-settings="saveSettings"
           @sync="syncCatalog"
         />
-        <div v-if="!manage || !isAdmin" class="price-tabs mb-4" role="tablist" aria-label="价格口径">
-          <button
-            role="tab"
-            data-testid="price-basis-display"
-            :aria-selected="priceBasis === 'display'"
-            :class="{ active: priceBasis === 'display' }"
-            @click="priceBasis = 'display'"
-          >分组价格</button>
-          <button
-            role="tab"
-            data-testid="price-basis-catalog"
-            :aria-selected="priceBasis === 'catalog'"
-            :class="{ active: priceBasis === 'catalog' }"
-            @click="priceBasis = 'catalog'"
-          >官方目录价</button>
-        </div>
         <button
           type="button"
           class="btn btn-secondary btn-sm mb-2 md:hidden"
@@ -148,7 +132,7 @@
               <option value="">全部状态</option>
               <option value="normal">信息完整</option>
               <option value="missing">缺少价格</option>
-              <option value="baseline">官方价待补充</option>
+              <option value="baseline">缺少官方原价</option>
               <option value="route">未提供渠道来源</option>
               <option value="zero">含零价项目</option>
             </select></label
@@ -168,9 +152,9 @@
           <label class="advanced-filter" :class="{ 'is-open': advancedFilters }"
             >排序<select v-model="sort" class="input" data-testid="price-sort">
               <option value="name">模型名称</option>
-              <option value="input">{{ currentBasis === 'display' ? '展示输入价升序' : '官方输入价升序' }}</option>
-              <option value="output">{{ currentBasis === 'display' ? '展示输出价升序' : '官方输出价升序' }}</option>
-              <option value="fixed">{{ currentBasis === 'display' ? '展示固定价升序' : '官方固定价升序' }}</option>
+              <option value="input">官方输入价升序</option>
+              <option value="output">官方输出价升序</option>
+              <option value="fixed">官方固定价升序</option>
               <option value="issues">异常优先</option>
             </select></label
           >
@@ -321,7 +305,7 @@
           </div>
         </div>
         <p class="py-3 text-xs text-gray-500">
-          {{ currentBasis === 'display' ? '显示当前分组适用的人民币展示价，包含渠道或分组定价及展示倍率。自定义展示价仅供参考，不改变网关实际结算；官方目录缺失时仍保留已配置的分组价格。' : '显示已同步官方目录的美元原价，不乘分组倍率或套餐折扣。人民币试算仅作汇率换算；目录缺失时不以分组价替代。' }}
+          {{manage && isAdmin ? '管理模式展示渠道、分组及自定义展示价，保存后在此核对。价格查询模式始终使用官方原价。' : '显示已同步官方目录的原币种价格，不乘分组倍率或套餐折扣；目录缺失时不以渠道价替代。'}}
         </p>
         <div v-if="error" role="alert" class="py-8 text-center">
           <p>{{ error }}</p>
@@ -352,7 +336,7 @@
         </p>
         <section v-else aria-label="模型价格列表" class="price-catalog">
           <div class="price-catalog-heading">
-            <span>模型 / MODEL</span><span>{{ currentBasis === 'display' ? '人民币展示价 / CNY' : '官方目录价 / USD' }}</span
+            <span>模型 / MODEL</span><span>{{manage && isAdmin ? '展示价格 / CNY' : '官方单价 / USD'}}</span
             ><span>价格来源</span><span></span>
           </div>
           <ModelPriceItem
@@ -360,7 +344,7 @@
             :key="modelKey(m)"
             :model="m"
             :manage="manage && isAdmin"
-            :basis="currentBasis"
+            :basis="manage && isAdmin ? 'display' : 'catalog'"
             :selected="selectedModels.includes(m.name)"
             :busy="busy"
             :show-baseline="showBaseline"
@@ -402,14 +386,14 @@
         </section>
         <BaseDialog
           :show="calculatorOpen"
-          :title="currentBasis === 'display' ? '人民币展示价试算' : '官方目录价人民币试算'"
+          title="费用试算"
           width="wide"
           @close="calculatorOpen = false"
           ><ModelPriceCalculator
             v-if="calculatorOpen"
             :models="filteredModels"
             :initial-model="calculatorKey"
-            :basis="currentBasis"
+            :basis="manage && isAdmin ? 'display' : 'catalog'"
         /></BaseDialog>
         <ModelPriceEditor
           v-if="editor"
@@ -510,7 +494,7 @@ const {
   copy,
 } = useModelPrices()
 const models = computed(() =>
-  currentBasis.value === 'display' ? salesModels.value : salesModels.value.map((m) =>
+  manage.value && isAdmin.value ? salesModels.value : salesModels.value.map((m) =>
     catalogModel(m, response.value?.usd_cny_rate || 0),
   ),
 )
@@ -522,8 +506,6 @@ const manage = ref(false),
   source = ref(''),
   priceState = ref(''),
   sort = ref<PriceSort>('name')
-const priceBasis = ref<'display' | 'catalog'>('display')
-const currentBasis = computed(() => manage.value && isAdmin.value ? 'display' : priceBasis.value)
 const showBaseline = ref(false),
   hiddenOnly = ref(false),
   page = ref(1)
@@ -615,7 +597,6 @@ watch(selectedGroupID, () => {
   confirmation.value = null
 })
 watch(manage, () => { resetFilters(); calculatorOpen.value=false; editor.value=null; confirmation.value=null; if(!manage.value){showHiddenGroups.value=false;showHiddenModels.value=false;includeCatalog.value=false} })
-watch(priceBasis, () => { resetFilters(); calculatorOpen.value = false })
 function resetFilters() {
   search.value = ''
   platform.value = ''

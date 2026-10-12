@@ -246,7 +246,9 @@ export function estimate(
   for (const f of tariffFields(m)) {
     const amount = usage[f.key]
     if (amount === 0) continue
-    const rate = selected.actual[f.cny]
+    const rate = m.pricing_source === 'official' && m.multiplier === 1 && !!m.catalog_price
+      ? selected.official[f.usd]
+      : selected.actual[f.cny]
     if (!validPrice(rate))
       return { total: null, reason: f.label + '价格缺失，不能估算', lines: [] }
     lines.push({

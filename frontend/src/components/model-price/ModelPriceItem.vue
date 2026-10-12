@@ -45,33 +45,26 @@
           >
             展示价覆盖 · 非结算承诺
           </p>
-          <p
-            v-if="model.availability === 'configured_only' || model.availability === 'catalog_only'"
-            class="mt-1 text-xs text-amber-700 dark:text-amber-300"
-            data-testid="model-price-availability"
-          >
-            {{ model.availability === 'configured_only' ? '仅配置价格' : '仅参考目录' }} · 可调用性待确认
-          </p>
         </div>
       </div>
       <dl v-if="kind(model) === 'token'" class="price-main-values">
         <div>
           <dt>{{primaryInput.image ? '图片输入' : '输入'}} / 百万 tokens</dt>
-          <dd>{{money(primaryInput.value, basis==='display'?'CNY':'USD')}}</dd>
+          <dd>{{money(primaryInput.value, primaryInput.currency)}}</dd>
         </div>
         <div>
           <dt>{{primaryOutput.image ? '图片输出' : '输出'}} / 百万 tokens</dt>
-          <dd>{{money(primaryOutput.value, basis==='display'?'CNY':'USD')}}</dd>
+          <dd>{{money(primaryOutput.value, primaryOutput.currency)}}</dd>
         </div>
       </dl>
       <dl v-else class="price-main-values">
         <div>
-          <dt>每{{ unit(model) }}<template v-if="baseTariffLabel(model) !== '基础价'"> · {{ baseTariffLabel(model) }}</template></dt>
+          <dt>每{{ unit(model) }}</dt>
           <dd>
             {{
               kind(model) === 'unknown'
                 ? '单位待确认'
-                : basis==='display' ? money(model.actual.per_request_cny) : money(model.official.per_request_usd, 'USD')
+                : money(primaryFixed.value, primaryFixed.currency)
             }}
           </dd>
         </div>
@@ -120,7 +113,7 @@
         >
       </summary>
       <div v-if="expanded || showBaseline" class="space-y-4 py-3">
-        <p class="text-xs text-gray-500"><template v-if="basis==='display'">人民币展示价包含适用的展示倍率；自定义展示价不改变实际计费。</template><template v-else>官方目录美元原价；人民币列仅按汇率 {{exchangeRate}} 换算，不含分组倍率或套餐折扣。</template><span v-if="model.catalog_price?.model && model.catalog_price.model !== model.name">目录模型：{{ model.catalog_price.model }}</span></p>
+        <p class="text-xs text-gray-500"><template v-if="basis==='display'">展示价格按分组配置的原币种显示；自定义展示价不改变实际计费。</template><template v-else>官方目录价格按官方原币种显示，不做汇率换算。</template><span v-if="model.catalog_price?.model && model.catalog_price.model !== model.name">目录模型：{{ model.catalog_price.model }}</span></p>
         <div v-for="tier in tariffs" :key="tier.key" class="overflow-x-auto">
           <h3 class="mb-2 text-sm font-medium">
             {{ tier.label
@@ -138,8 +131,7 @@
             <thead>
               <tr>
                 <th class="py-2">项目 / {{ unit(model) }}</th>
-                <th>{{basis==='display'?'计费基准价 USD':'官方原价 USD'}}</th>
-                <th>{{basis==='display'?'人民币展示价':'人民币等值（仅汇率换算）'}}</th>
+                <th>官方价格</th>
               </tr>
             </thead>
             <tbody>
@@ -149,8 +141,7 @@
                 class="border-t border-gray-100 dark:border-dark-700"
               >
                 <td class="py-2">{{ f.label }}</td>
-                <td>{{ money(tier.official[f.usd], 'USD') }}</td>
-                <td>{{ money(tier.actual[f.cny]) }}</td>
+                <td>{{ money(tier.actual[f.cny], basis==='display' ? 'CNY' : 'USD') }}</td>
               </tr>
             </tbody>
           </table>
@@ -172,7 +163,6 @@ import {
   money,
   kind,
   unit,
-  baseTariffLabel,
   modeLabel,
   sourceLabel,
   tariffFields,
@@ -180,7 +170,7 @@ import {
   issueLabels,
   isDisplayOverride,
 } from './pricing'
-const props = withDefaults(defineProps<{
+const props = defineProps<{
   model: ModelPriceModel
   basis?: 'catalog' | 'display'
   manage: boolean
@@ -188,8 +178,8 @@ const props = withDefaults(defineProps<{
   busy: boolean
   showBaseline: boolean
   showDiscount: boolean
-  exchangeRate: number
-}>(), { basis: 'display' })
+  exchangeRate?: number
+}>()
 defineEmits<{
   select: []
   copy: [text: string]
@@ -199,18 +189,19 @@ defineEmits<{
 const primaryInput=computed(()=>{
  const text=props.basis==='display'?props.model.actual.input_cny_per_m:props.model.official.input_usd_per_m
  const image=props.basis==='display'?props.model.actual.image_input_cny_per_m:props.model.official.image_input_usd_per_m
- return {value:text ?? image,image:text==null && image!=null}
+ return {value:text ?? image,image:text==null && image!=null,currency:props.basis==='display'?'CNY':'USD'}
 })
 const primaryOutput=computed(()=>{
  const text=props.basis==='display'?props.model.actual.output_cny_per_m:props.model.official.output_usd_per_m
  const image=props.basis==='display'?props.model.actual.image_output_cny_per_m:props.model.official.image_output_usd_per_m
- return {value:text ?? image,image:text==null && image!=null}
+ return {value:text ?? image,image:text==null && image!=null,currency:props.basis==='display'?'CNY':'USD'}
 })
+const primaryFixed=computed(()=>({value:props.basis==='display'?props.model.actual.per_request_cny:props.model.official.per_request_usd,currency:props.basis==='display'?'CNY':'USD'}))
 const expanded = ref(false)
 const tariffs = computed(() => [
   {
     key: 'base',
-    label: baseTariffLabel(props.model),
+    label: '基础价',
     actual: props.model.actual,
     official: props.model.official,
     threshold_tokens: undefined as number | undefined,

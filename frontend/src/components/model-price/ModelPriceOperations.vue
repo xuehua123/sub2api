@@ -70,7 +70,7 @@
           /></label>
         </div>
         <p class="text-xs text-gray-500">
-          USD/CNY 用于官方原价的人民币等值试算；额度换算参数仅供销售展示配置使用，不改变本页官方原价。
+          价格页按官方原币种显示；额度换算参数仅供销售展示配置使用，不改变本页官方原价。
         </p>
         <button class="btn btn-secondary btn-sm" :disabled="busy || !dirty">
           预览并保存
