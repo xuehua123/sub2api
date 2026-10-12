@@ -13,6 +13,14 @@
       v-html="descriptionHtml"
     ></div>
 
+    <div
+      class="rounded-2xl border border-primary-100 bg-primary-50/60 px-5 py-3 text-sm dark:border-primary-900/40 dark:bg-primary-900/10"
+      data-testid="model-plaza-price-basis"
+    >
+      <p class="font-semibold text-primary-900 dark:text-primary-100">{{ t('modelPlaza.priceBasis.title') }}</p>
+      <p class="mt-1 text-xs text-primary-800/80 dark:text-primary-200/80">{{ t('modelPlaza.priceBasis.description') }}</p>
+    </div>
+
     <!-- 未登录提示 -->
     <p
       v-if="!isAuthenticated"

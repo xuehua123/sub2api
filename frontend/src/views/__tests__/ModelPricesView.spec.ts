@@ -197,7 +197,7 @@ describe('model price workspaces', () => {
     await w.findAll('input[type="checkbox"]')[0].setValue(true)
     expect(w.text()).toContain('Fast')
     expect(w.text()).toContain('缓存写入')
-    expect(w.text()).toContain('待定价')
+    expect(w.text()).toContain('US$0')
     expect(w.text()).toContain('官方原价')
   })
   it('clears stale platform and source criteria on group change', async () => {
@@ -218,7 +218,7 @@ describe('model price workspaces', () => {
     expect(w.get('.price-main-values').text()).toContain('693')
     await w.get('[data-testid="price-source-filter"]').setValue('custom')
     expect(w.findAll('[data-testid="model-price-row"]')).toHaveLength(1)
-    await w.findAll('[role="tab"]').find(tab=>tab.text()==='价格查询')!.trigger('click');await flushPromises()
+    await w.findAll('[role="tab"]').find(tab=>tab.text()==='官方目录（USD）')!.trigger('click');await flushPromises()
     expect(w.get('.price-main-values').text()).toContain('US$3')
   })
 

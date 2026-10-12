@@ -12,6 +12,7 @@ export type PriceSort =
   | 'fixed'
   | 'discount'
   | 'issues'
+export type PriceBasis = 'catalog' | 'display'
 export const priceFields = [
   {
     key: 'input',
@@ -78,6 +79,17 @@ export type Usage = Record<UsageField | 'requests', number>
 export function validPrice(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0
 }
+
+/** Return the price in the currency represented by the current workspace. */
+export function priceValue(
+  model: ModelPriceModel,
+  field: (typeof priceFields)[number],
+  basis: PriceBasis = 'display',
+) {
+  return basis === 'catalog'
+    ? model.official[field.usd]
+    : model.actual[field.cny]
+}
 export function money(
   value: number | null | undefined,
   currency = 'CNY',
@@ -142,14 +154,19 @@ export function isDisplayOverride(m: ModelPriceModel) {
     !!m.custom_price
   )
 }
-export function issues(m: ModelPriceModel): string[] {
+export function issues(m: ModelPriceModel, basis: PriceBasis = 'display'): string[] {
   const result: string[] = []
   if (kind(m) === 'unknown') result.push('unit')
   if (m.pricing_source === 'unknown') result.push('source')
   const required =
     kind(m) === 'token'
-      ? [m.actual.input_cny_per_m ?? m.actual.image_input_cny_per_m, m.actual.output_cny_per_m ?? m.actual.image_output_cny_per_m]
-      : [m.actual.per_request_cny]
+      ? [
+          priceValue(m, priceFields[0], basis) ??
+            priceValue(m, priceFields[6], basis),
+          priceValue(m, priceFields[1], basis) ??
+            priceValue(m, priceFields[7], basis),
+        ]
+      : [priceValue(m, priceFields[8], basis)]
   if (required.some((v) => !validPrice(v))) result.push('missing')
   if (m.official_missing || !m.catalog_price) result.push('baseline')
   if (!m.channel_names.length) result.push('route')
@@ -179,6 +196,7 @@ export function estimate(
   m: ModelPriceModel,
   tierKey: string,
   usage: Usage,
+  basis: PriceBasis = 'display',
 ): {
   total: number | null
   reason?: string
@@ -246,9 +264,7 @@ export function estimate(
   for (const f of tariffFields(m)) {
     const amount = usage[f.key]
     if (amount === 0) continue
-    const rate = m.pricing_source === 'official' && m.multiplier === 1 && !!m.catalog_price
-      ? selected.official[f.usd]
-      : selected.actual[f.cny]
+    const rate = basis === 'catalog' ? selected.official[f.usd] : selected.actual[f.cny]
     if (!validPrice(rate))
       return { total: null, reason: f.label + '价格缺失，不能估算', lines: [] }
     lines.push({
@@ -268,11 +284,12 @@ export function comparePrices(
   a: ModelPriceModel,
   b: ModelPriceModel,
   sort: PriceSort,
+  basis: PriceBasis = 'display',
 ) {
   const tie = () =>
     modelKey(a).localeCompare(modelKey(b), 'zh-CN', { numeric: true })
   if (sort === 'name') return tie()
-  if (sort === 'issues') return issues(b).length - issues(a).length || tie()
+  if (sort === 'issues') return issues(b, basis).length - issues(a, basis).length || tie()
   // Never rank a per-second price against a per-image price as if units matched.
   if (sort === 'fixed' && kind(a) !== kind(b))
     return kind(a).localeCompare(kind(b))
@@ -281,12 +298,12 @@ export function comparePrices(
       ? m.cheaper_factor
       : sort === 'fixed'
         ? kind(m) !== 'token'
-          ? m.actual.per_request_cny
+          ? priceValue(m, priceFields[8], basis)
           : null
         : kind(m) === 'token'
           ? sort === 'input'
-            ? m.actual.input_cny_per_m
-            : m.actual.output_cny_per_m
+            ? priceValue(m, priceFields[0], basis)
+            : priceValue(m, priceFields[1], basis)
           : null
   const x = value(a),
     y = value(b)

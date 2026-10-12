@@ -1,7 +1,7 @@
 <template>
   <div data-testid="model-price-calculator" class="space-y-5">
     <h3 class="text-sm font-medium" data-testid="calculator-price-basis">
-      {{ (basis === 'display' ? '人民币展示价' : '官方目录价 · 官方原币种') + (model ? ' · 每' + unit(model) : '') }}
+      {{ (basis === 'display' ? '当前计费价 · CNY' : '官方目录价 · USD') + (model ? ' · 每' + unit(model) : '') }}
     </h3>
     <div class="grid gap-3 sm:grid-cols-2">
       <label class="text-sm"
@@ -50,7 +50,7 @@
       此档位仅在所用账号开启长上下文计费时适用。
     </p>
     <p class="text-xs text-gray-500">
-      {{basis==='display'?'当前分组展示价试算':'官方原价试算（按官方原币种）'}}，不发起请求、不扣费。Token
+      {{basis==='display'?'当前分组计费价试算（CNY）':'官方目录价试算（USD）'}}，不发起请求、不扣费。Token
       输入按未缓存、缓存读取、缓存写入分别填写，不能重复计入。
     </p>
     <div class="grid gap-3 sm:grid-cols-2">
@@ -88,7 +88,7 @@
       aria-live="polite"
     >
       <div class="flex flex-wrap items-center justify-between gap-2">
-        <span class="text-sm">{{basis==='display'?'展示价预计费用':'官方原价预计费用'}}</span
+        <span class="text-sm">{{basis==='display'?'预计扣费（CNY）':'官方目录费用（USD）'}}</span
         ><strong
           class="text-xl tabular-nums text-emerald-700 dark:text-emerald-300"
           data-testid="calculator-total"
@@ -138,11 +138,12 @@ import {
   money,
   isDisplayOverride,
   type Usage,
+  type PriceBasis,
 } from './pricing'
 const props = withDefaults(defineProps<{
   models: ModelPriceModel[]
   initialModel?: string
-  basis?: 'catalog' | 'display'
+  basis?: PriceBasis
 }>(), { basis: 'display' })
 const selectedKey = ref(props.initialModel || '')
 const tierKey = ref('base')
@@ -175,9 +176,14 @@ watch(
 const model = computed(() => props.models.find(m => modelKey(m) === selectedKey.value))
 watch(selectedKey, () => {
   tierKey.value = 'base'
-  const price = model.value?.actual
-  const imageInput = price?.input_cny_per_m == null && price?.image_input_cny_per_m != null
-  const imageOutput = price?.output_cny_per_m == null && price?.image_output_cny_per_m != null
+  const official = model.value?.official
+  const actual = model.value?.actual
+  const imageInput = props.basis === 'catalog'
+    ? official?.input_usd_per_m == null && official?.image_input_usd_per_m != null
+    : actual?.input_cny_per_m == null && actual?.image_input_cny_per_m != null
+  const imageOutput = props.basis === 'catalog'
+    ? official?.output_usd_per_m == null && official?.image_output_usd_per_m != null
+    : actual?.output_cny_per_m == null && actual?.image_output_cny_per_m != null
   Object.assign(usage, {input:imageInput?0:1000,output:imageOutput?0:500,cache_read:0,cache_write:0,cache_write_5m:0,cache_write_1h:0,image_input:imageInput?1000:0,image_output:imageOutput?500:0,quantity:1,requests:1})
 }, {immediate:true})
 const selectedTier = computed(() =>
@@ -188,14 +194,16 @@ const fields = computed(() =>
     ? tariffFields(model.value).filter(
         (f) =>
           ['input', 'output', 'quantity'].includes(f.key) ||
-          tariff(model.value!, tierKey.value)?.actual[f.cny] != null ||
+          (props.basis === 'catalog'
+            ? tariff(model.value!, tierKey.value)?.official[f.usd] != null
+            : tariff(model.value!, tierKey.value)?.actual[f.cny] != null) ||
           usage[f.key] !== 0,
       )
     : [],
 )
 const result = computed(() =>
   model.value
-    ? estimate(model.value, tierKey.value, usage)
+    ? estimate(model.value, tierKey.value, usage, props.basis)
     : { total: null, reason: '没有可估算的模型', lines: [] },
 )
 </script>

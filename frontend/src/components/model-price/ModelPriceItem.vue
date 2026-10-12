@@ -77,7 +77,7 @@
           "
           >基准价的 {{ (100 / model.cheaper_factor).toFixed(1) }}%</span
         ><span
-          v-for="issue in issues(model)"
+          v-for="issue in issues(model, basis)"
           :key="issue"
           class="text-amber-700 dark:text-amber-300"
           >{{ issueLabels[issue] }}</span
@@ -113,7 +113,7 @@
         >
       </summary>
       <div v-if="expanded || showBaseline" class="space-y-4 py-3">
-        <p class="text-xs text-gray-500"><template v-if="basis==='display'">展示价格按分组配置的原币种显示；自定义展示价不改变实际计费。</template><template v-else>官方目录价格按官方原币种显示，不做汇率换算。</template><span v-if="model.catalog_price?.model && model.catalog_price.model !== model.name">目录模型：{{ model.catalog_price.model }}</span></p>
+        <p class="text-xs text-gray-500"><template v-if="basis==='display'">当前计费价按 CNY 显示，可能包含分组倍率或自定义展示价。</template><template v-else>官方目录价按 USD 显示，不叠加分组倍率或折扣。</template><span v-if="model.catalog_price?.model && model.catalog_price.model !== model.name">目录模型：{{ model.catalog_price.model }}</span></p>
         <div v-for="tier in tariffs" :key="tier.key" class="overflow-x-auto">
           <h3 class="mb-2 text-sm font-medium">
             {{ tier.label
@@ -131,7 +131,7 @@
             <thead>
               <tr>
                 <th class="py-2">项目 / {{ unit(model) }}</th>
-                <th>官方价格</th>
+                <th>{{ basis === 'display' ? '当前计费展示价 / CNY' : '官方目录原价 / USD' }}</th>
               </tr>
             </thead>
             <tbody>
@@ -141,7 +141,7 @@
                 class="border-t border-gray-100 dark:border-dark-700"
               >
                 <td class="py-2">{{ f.label }}</td>
-                <td>{{ money(tier.actual[f.cny], basis==='display' ? 'CNY' : 'USD') }}</td>
+                <td>{{ money(detailValue(tier, f), detailCurrency) }}</td>
               </tr>
             </tbody>
           </table>
@@ -157,7 +157,7 @@
 </template>
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import type { ModelPriceModel } from '@/api/modelPrices'
+import type { ModelPriceModel, ModelPriceTier } from '@/api/modelPrices'
 import Icon from '@/components/icons/Icon.vue'
 import {
   money,
@@ -166,20 +166,22 @@ import {
   modeLabel,
   sourceLabel,
   tariffFields,
+  priceFields,
   issues,
   issueLabels,
   isDisplayOverride,
+  type PriceBasis,
 } from './pricing'
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   model: ModelPriceModel
-  basis?: 'catalog' | 'display'
+  basis?: PriceBasis
   manage: boolean
   selected: boolean
   busy: boolean
   showBaseline: boolean
   showDiscount: boolean
   exchangeRate?: number
-}>()
+}>(), { basis: 'display' })
 defineEmits<{
   select: []
   copy: [text: string]
@@ -197,6 +199,15 @@ const primaryOutput=computed(()=>{
  return {value:text ?? image,image:text==null && image!=null,currency:props.basis==='display'?'CNY':'USD'}
 })
 const primaryFixed=computed(()=>({value:props.basis==='display'?props.model.actual.per_request_cny:props.model.official.per_request_usd,currency:props.basis==='display'?'CNY':'USD'}))
+const detailCurrency = computed(() => (props.basis === 'display' ? 'CNY' : 'USD'))
+function detailValue(
+  tier: ModelPriceTier | { actual: ModelPriceTier['actual']; official: ModelPriceTier['official'] },
+  field: (typeof priceFields)[number],
+) {
+  return props.basis === 'display'
+    ? tier.actual[field.cny]
+    : tier.official[field.usd]
+}
 const expanded = ref(false)
 const tariffs = computed(() => [
   {

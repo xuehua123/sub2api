@@ -111,4 +111,19 @@ describe('price estimates', () => {
     m.actual.output_cny_per_m = null
     expect(issues(m)).toContain('missing')
   })
+  it('uses the selected currency basis for warnings and sorting', () => {
+    const m = model({ pricing_source: 'official' })
+    m.actual.input_cny_per_m = null
+    m.actual.output_cny_per_m = null
+    expect(issues(m, 'catalog')).not.toContain('missing')
+
+    const lower = model({ name: 'lower', pricing_source: 'official' })
+    lower.official.input_usd_per_m = 1
+    const higher = model({ name: 'higher', pricing_source: 'official' })
+    higher.official.input_usd_per_m = 10
+    expect([higher, lower].sort((a, b) => comparePrices(a, b, 'input', 'catalog')).map((x) => x.name)).toEqual([
+      'lower',
+      'higher',
+    ])
+  })
 })

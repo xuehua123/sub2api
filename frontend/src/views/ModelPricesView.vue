@@ -20,7 +20,8 @@
             <h1 class="price-title">模型价格</h1>
             <p class="price-page-description">
               {{ selectedGroup?.name || '选择分组' }} ·
-              {{ filteredModels.length }} 个模型 · {{ manage && isAdmin ? '展示价格 · CNY' : '官方原价 · USD' }}
+              {{ filteredModels.length }} 个模型 ·
+              {{ manage && isAdmin ? '当前计费展示价 · CNY' : '官方目录原价 · USD' }}
             </p>
           </div>
           <div class="flex items-center gap-2">
@@ -45,7 +46,7 @@
                 :class="{ active: !manage }"
                 @click="manage = false"
               >
-                价格查询</button
+                官方目录（USD）</button
               ><button
                 role="tab"
                 data-testid="price-manage-tab"
@@ -53,7 +54,7 @@
                 :class="{ active: manage }"
                 @click="manage = true"
               >
-                价格管理
+                当前计费（CNY）
               </button>
             </div>
             <button
@@ -71,6 +72,23 @@
             </button>
           </div>
         </header>
+
+        <section
+          class="price-basis-banner"
+          data-testid="price-basis-banner"
+          aria-live="polite"
+        >
+          <div>
+            <p class="price-basis-kicker">当前价格口径</p>
+            <strong>{{ priceBasis === 'catalog' ? '官方目录原价（USD）' : '当前分组计费价（CNY）' }}</strong>
+            <p>
+              {{ priceBasis === 'catalog'
+                ? '官方目录价不包含分组倍率、套餐折扣或自定义展示价。'
+                : '当前分组计费价可能包含分组倍率或自定义展示价，是本分组的计费参考。' }}
+            </p>
+          </div>
+          <span class="price-basis-currency">{{ priceBasis === 'catalog' ? 'USD' : 'CNY' }}</span>
+        </section>
 
         <ModelPriceOperations
           v-if="isAdmin && manage"
@@ -305,7 +323,7 @@
           </div>
         </div>
         <p class="py-3 text-xs text-gray-500">
-          {{manage && isAdmin ? '管理模式展示渠道、分组及自定义展示价，保存后在此核对。价格查询模式始终使用官方原价。' : '显示已同步官方目录的原币种价格，不乘分组倍率或套餐折扣；目录缺失时不以渠道价替代。'}}
+          {{manage && isAdmin ? '这里显示当前分组的计费展示价（CNY），可能包含分组倍率或自定义展示价；它不是官方目录价。' : '这里仅显示官方目录原价（USD），不叠加分组倍率、套餐折扣或渠道价。'}}
         </p>
         <div v-if="error" role="alert" class="py-8 text-center">
           <p>{{ error }}</p>
@@ -336,7 +354,7 @@
         </p>
         <section v-else aria-label="模型价格列表" class="price-catalog">
           <div class="price-catalog-heading">
-            <span>模型 / MODEL</span><span>{{manage && isAdmin ? '展示价格 / CNY' : '官方单价 / USD'}}</span
+            <span>模型 / MODEL</span><span>{{manage && isAdmin ? '当前计费展示价 / CNY' : '官方目录原价 / USD'}}</span
             ><span>价格来源</span><span></span>
           </div>
           <ModelPriceItem
@@ -468,6 +486,7 @@ import {
   issues,
   comparePrices,
   modelKey,
+  type PriceBasis,
   type PriceSort,
 } from '@/components/model-price/pricing'
 import '@/components/model-price/model-prices.css'
@@ -498,6 +517,9 @@ const models = computed(() =>
     catalogModel(m, response.value?.usd_cny_rate || 0),
   ),
 )
+const priceBasis = computed<PriceBasis>(() =>
+  manage.value && isAdmin.value ? 'display' : 'catalog',
+)
 const advancedFilters = ref(false)
 const manage = ref(false),
   search = ref(''),
@@ -525,7 +547,7 @@ const filteredModels = computed(() =>
       if (platform.value && m.platform !== platform.value) return false
       if (billing.value && kind(m) !== billing.value) return false
       if (source.value && m.pricing_source !== source.value) return false
-      const problems = issues(m)
+      const problems = issues(m, priceBasis.value)
       if (priceState.value === 'normal' && problems.length) return false
       if (
         priceState.value &&
@@ -540,7 +562,7 @@ const filteredModels = computed(() =>
           .includes(search.value.trim().toLowerCase())
       )
     })
-    .sort((a, b) => comparePrices(a, b, sort.value)),
+    .sort((a, b) => comparePrices(a, b, sort.value, priceBasis.value)),
 )
 const pages = computed(() =>
   Math.max(1, Math.ceil(filteredModels.value.length / 30)),
