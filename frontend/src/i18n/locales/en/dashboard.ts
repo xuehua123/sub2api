@@ -766,8 +766,8 @@ export default {
     title: 'Model Plaza',
     description: 'Browse available models and pricing by group',
     priceBasis: {
-      title: 'Price basis: CNY equivalent for display, normalized USD for catalog reference',
-      description: 'The group display price may include a group multiplier or custom display price; CNY is only a converted equivalent of the USD basis. Catalog data is normalized to USD because the upstream source provides no original currency field.',
+      title: 'Model table price basis: normalized USD reference price',
+      description: 'The model table shows only normalized catalog reference prices in USD, without group multipliers, plan discounts, or channel markups. The upstream source provides no original currency field. Group multipliers are shown as group information; CNY on the admin group display page is only a converted equivalent.',
     },
     loading: 'Loading...',
     empty: 'No groups to display',
