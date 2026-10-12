@@ -89,6 +89,7 @@ export interface ModelPriceCatalogPrice {
 }
 
 export interface ModelPriceModel {
+  availability?: 'account' | 'channel' | 'configured_only' | 'catalog_only' | 'unknown'
   catalog_price?: ModelPriceCatalogPrice | null
   name: string
   platform: string

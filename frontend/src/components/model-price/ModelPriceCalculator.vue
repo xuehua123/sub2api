@@ -1,5 +1,8 @@
 <template>
   <div data-testid="model-price-calculator" class="space-y-5">
+    <h3 class="text-sm font-medium" data-testid="calculator-price-basis">
+      {{ (basis === 'display' ? '人民币展示价' : '官方目录价折合人民币') + (model ? ' · 每' + unit(model) : '') }}
+    </h3>
     <div class="grid gap-3 sm:grid-cols-2">
       <label class="text-sm"
         >模型<select
@@ -22,7 +25,7 @@
           class="input mt-1"
           data-testid="calculator-tier"
         >
-          <option value="base">基础价</option>
+          <option value="base">{{ baseTariffLabel(model) }}</option>
           <option
             v-for="tier in model?.price_tiers.filter((t) => t.key !== 'base') ||
             []"
@@ -47,7 +50,7 @@
       此档位仅在所用账号开启长上下文计费时适用。
     </p>
     <p class="text-xs text-gray-500">
-      {{basis==='display'?'管理模式展示价试算':'官方原价试算（仅按汇率换算人民币）'}}，不发起请求、不扣费。Token
+      {{basis==='display'?'当前分组展示价试算':'官方目录价试算（仅按汇率换算人民币）'}}，不发起请求、不扣费。Token
       输入按未缓存、缓存读取、缓存写入分别填写，不能重复计入。
     </p>
     <div class="grid gap-3 sm:grid-cols-2">
@@ -114,6 +117,12 @@
       >
         使用自定义展示价估算，不代表网关实际结算价格。
       </p>
+      <p
+        v-if="model?.availability === 'configured_only' || model?.availability === 'catalog_only'"
+        class="mt-3 text-sm text-amber-700 dark:text-amber-300"
+      >
+        该模型仅有价格参考，可调用性待确认。
+      </p>
     </div>
   </div>
 </template>
@@ -127,15 +136,16 @@ import {
   estimate,
   kind,
   unit,
+  baseTariffLabel,
   money,
   isDisplayOverride,
   type Usage,
 } from './pricing'
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   models: ModelPriceModel[]
   initialModel?: string
   basis?: 'catalog' | 'display'
-}>()
+}>(), { basis: 'display' })
 const selectedKey = ref(props.initialModel || '')
 const tierKey = ref('base')
 const usage = reactive<Usage>({

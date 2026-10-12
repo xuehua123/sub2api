@@ -354,7 +354,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	availableChannelHandler := handler.NewAvailableChannelHandler(channelService, apiKeyService, settingService)
 	accountService := service.NewAccountService(accountRepository, groupRepository)
 	groupService := service.NewGroupService(groupRepository, apiKeyAuthCacheInvalidator)
-	modelPriceHandler := handler.NewModelPriceHandler(channelService, accountService, apiKeyService, groupService, pricingService, settingService, paymentConfigService)
+	modelPriceHandler := handler.NewModelPriceHandler(channelService, accountService, apiKeyService, groupService, pricingService, settingService, paymentConfigService, compositeRouteResolver)
 	modelPlazaService := service.NewModelPlazaService(channelRepository, groupRepository, pricingService, billingService, modelPricingResolver)
 	modelPlazaHandler := handler.NewModelPlazaHandler(modelPlazaService, apiKeyService, settingService)
 	imageTaskStore := repository.NewImageTaskStore(redisClient)

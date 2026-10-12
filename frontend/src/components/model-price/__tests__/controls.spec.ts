@@ -28,6 +28,43 @@ describe('pricing controls', () => {
     expect(w.get('[data-testid="calculator-total"]').text()).toBe('暂不可估算')
     w.unmount()
   })
+  it('estimates image and video display tiers using their explicit units', async () => {
+    for (const [mode, label] of [['image', '张'], ['video', '秒']]) {
+      const m = model({ billing_mode: mode, catalog_price: null, availability: 'configured_only' })
+      m.actual.per_request_cny = 0.25
+      m.price_tiers = [{
+        key: 'large',
+        label: '高分辨率',
+        official: {...m.official,per_request_usd:0.5},
+        actual: {...m.actual,per_request_cny:0.5},
+      }]
+      const w = mount(ModelPriceCalculator, { props: { models: [m], basis: 'display' } })
+      expect(w.get('[data-testid="calculator-price-basis"]').text()).toContain('每' + label)
+      expect(w.text()).toContain('可调用性待确认')
+      expect(w.text()).not.toContain('管理模式')
+      await w.get('[data-testid="calculator-quantity"]').setValue(4)
+      await w.get('[data-testid="calculator-requests"]').setValue(2)
+      expect(w.get('[data-testid="calculator-total"]').text()).toBe('¥2')
+      await w.get('[data-testid="calculator-tier"]').setValue('large')
+      expect(w.get('[data-testid="calculator-total"]').text()).toBe('¥4')
+      w.unmount()
+    }
+  })
+  it('names the default media resolution and keeps an unpriced default unavailable', async () => {
+    const m = model({ billing_mode: 'video', catalog_price: null })
+    m.actual.per_request_cny = null
+    m.price_tiers = [
+      { key: 'base', label: '480p（默认）', official: m.official, actual: m.actual },
+      { key: '720p', label: '720p', official: m.official, actual: { ...m.actual, per_request_cny: 2 } },
+    ]
+    const w = mount(ModelPriceCalculator, { props: { models: [m] } })
+    expect(w.get('[data-testid="calculator-tier"]').text()).toContain('480p（默认）')
+    await w.get('[data-testid="calculator-quantity"]').setValue(3)
+    expect(w.get('[data-testid="calculator-total"]').text()).toBe('暂不可估算')
+    await w.get('[data-testid="calculator-tier"]').setValue('720p')
+    expect(w.get('[data-testid="calculator-total"]').text()).toBe('¥6')
+    w.unmount()
+  })
   it('preserves dirty conversion fields across background response refresh', async () => {
     const saveSettings = vi.fn().mockResolvedValue(true)
     const w = mount(ModelPriceOperations, {

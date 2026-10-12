@@ -45,6 +45,13 @@
           >
             展示价覆盖 · 非结算承诺
           </p>
+          <p
+            v-if="model.availability === 'configured_only' || model.availability === 'catalog_only'"
+            class="mt-1 text-xs text-amber-700 dark:text-amber-300"
+            data-testid="model-price-availability"
+          >
+            {{ model.availability === 'configured_only' ? '仅配置价格' : '仅参考目录' }} · 可调用性待确认
+          </p>
         </div>
       </div>
       <dl v-if="kind(model) === 'token'" class="price-main-values">
@@ -59,7 +66,7 @@
       </dl>
       <dl v-else class="price-main-values">
         <div>
-          <dt>每{{ unit(model) }}</dt>
+          <dt>每{{ unit(model) }}<template v-if="baseTariffLabel(model) !== '基础价'"> · {{ baseTariffLabel(model) }}</template></dt>
           <dd>
             {{
               kind(model) === 'unknown'
@@ -165,6 +172,7 @@ import {
   money,
   kind,
   unit,
+  baseTariffLabel,
   modeLabel,
   sourceLabel,
   tariffFields,
@@ -172,7 +180,7 @@ import {
   issueLabels,
   isDisplayOverride,
 } from './pricing'
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   model: ModelPriceModel
   basis?: 'catalog' | 'display'
   manage: boolean
@@ -181,7 +189,7 @@ const props = defineProps<{
   showBaseline: boolean
   showDiscount: boolean
   exchangeRate: number
-}>()
+}>(), { basis: 'display' })
 defineEmits<{
   select: []
   copy: [text: string]
@@ -202,7 +210,7 @@ const expanded = ref(false)
 const tariffs = computed(() => [
   {
     key: 'base',
-    label: '基础价',
+    label: baseTariffLabel(props.model),
     actual: props.model.actual,
     official: props.model.official,
     threshold_tokens: undefined as number | undefined,

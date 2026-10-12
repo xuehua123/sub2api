@@ -108,6 +108,10 @@ export function unit(m: ModelPriceModel) {
     unknown: '单位未确认',
   }[kind(m)]
 }
+export function baseTariffLabel(m?: ModelPriceModel | null): string {
+  if (!m || !['image', 'video'].includes(kind(m))) return '基础价'
+  return m.price_tiers.find((tier) => tier.key === 'base')?.label || '基础价'
+}
 export function modeLabel(m: ModelPriceModel) {
   return {
     token: 'Token 计费',
@@ -147,7 +151,7 @@ export function issues(m: ModelPriceModel): string[] {
       ? [m.actual.input_cny_per_m ?? m.actual.image_input_cny_per_m, m.actual.output_cny_per_m ?? m.actual.image_output_cny_per_m]
       : [m.actual.per_request_cny]
   if (required.some((v) => !validPrice(v))) result.push('missing')
-  if (m.official_missing) result.push('baseline')
+  if (m.official_missing || !m.catalog_price) result.push('baseline')
   if (!m.channel_names.length) result.push('route')
   // A display-only zero is valid; never report it as a loss without cost data.
   if (required.some((v) => v === 0)) result.push('zero')
@@ -157,13 +161,13 @@ export const issueLabels: Record<string, string> = {
   unit: '计费单位待确认',
   source: '价格来源待确认',
   missing: '价格信息不完整',
-  baseline: '官方原价缺失',
+  baseline: '官方价待补充',
   route: '未提供渠道来源',
   zero: '含零价项目',
 }
 export function tariff(m: ModelPriceModel, key: string) {
   if (key === 'base')
-    return { actual: m.actual, official: m.official, label: '基础价' }
+    return { actual: m.actual, official: m.official, label: baseTariffLabel(m) }
   return m.price_tiers.find((t) => t.key === key)
 }
 export function tariffFields(m: ModelPriceModel) {

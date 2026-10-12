@@ -808,10 +808,12 @@ func TestModelsForGroupUsesRequestedBillingModelForGroupPrice(t *testing.T) {
 		},
 	}, 7, false, nil)
 
-	require.Len(t, models, 1)
-	require.Equal(t, service.PricingSourceGroup, models[0].PricingSource)
-	require.NotNil(t, models[0].Official.InputUSDPerM)
-	require.InDelta(t, 1.0, *models[0].Official.InputUSDPerM, 1e-12)
+	require.Len(t, models, 2)
+	require.Equal(t, "configured_only", models[0].Availability, "unreferenced exact pricing remains a reference card, without claiming account availability")
+	require.Equal(t, "public-alias", models[1].Name)
+	require.Equal(t, service.PricingSourceGroup, models[1].PricingSource)
+	require.NotNil(t, models[1].Official.InputUSDPerM)
+	require.InDelta(t, 1.0, *models[1].Official.InputUSDPerM, 1e-12)
 }
 
 func TestModelsForGroup_MappedAliasUsesBillingModelForOfficialPrice(t *testing.T) {
