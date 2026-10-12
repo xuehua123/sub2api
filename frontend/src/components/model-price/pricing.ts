@@ -161,7 +161,7 @@ export const issueLabels: Record<string, string> = {
   unit: '计费单位待确认',
   source: '价格来源待确认',
   missing: '价格信息不完整',
-  baseline: '官方价待补充',
+  baseline: '官方价格缺失',
   route: '未提供渠道来源',
   zero: '含零价项目',
 }

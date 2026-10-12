@@ -136,7 +136,7 @@ describe('model price workspaces', () => {
     await enter(w)
     await w.get('[data-testid="price-source-filter"]').setValue('unknown')
     expect(w.findAll('[data-testid="model-price-row"]')).toHaveLength(1)
-    expect(w.text()).toContain('官方原价缺失')
+    expect(w.text()).toContain('官方价格缺失')
     await w.get('[data-testid="model-search"]').setValue('absent')
     expect(w.findAll('[data-testid="model-price-row"]')).toHaveLength(0)
   })
