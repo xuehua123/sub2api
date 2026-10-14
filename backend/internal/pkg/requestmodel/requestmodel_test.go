@@ -5,6 +5,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strconv"
 	"testing"
 
@@ -253,5 +254,21 @@ func TestFromBodyForRouteReturnsFirstCandidate(t *testing.T) {
 	got := FromBodyForRoute("", "application/json", []byte(`{"model":"first","model":"last"}`))
 	if got != "first" {
 		t.Fatalf("dispatch helper keeps gjson-first semantics, got %q", got)
+	}
+}
+
+func TestGeminiCachedContentModelCandidates(t *testing.T) {
+	for _, tc := range []struct {
+		body string
+		want []string
+	}{
+		{`{"model":"models/gemini-2.5-pro"}`, []string{"gemini-2.5-pro"}},
+		{`{"model":"gemini-2.5-pro"}`, []string{"gemini-2.5-pro"}},
+		{`{"model":"models/gemini-2.5-pro","model":"models/gemini-2.5-flash"}`, []string{"gemini-2.5-pro", "gemini-2.5-flash"}},
+	} {
+		got := FromBodyCandidates("/v1beta/cachedContents", "application/json", []byte(tc.body))
+		if !reflect.DeepEqual(got, tc.want) {
+			t.Fatalf("got %v, want %v", got, tc.want)
+		}
 	}
 }

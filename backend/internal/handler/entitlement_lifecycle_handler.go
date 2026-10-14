@@ -43,7 +43,7 @@ func (h *EntitlementHandler) SetAutoAdvanceMonthly(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	response.Success(c, dto.UserEntitlementFromService(ent, h.now()))
+	response.Success(c, dto.UserEntitlementFromService(ent, h.now()).Localized(c.GetHeader("Accept-Language")))
 }
 
 func (h *EntitlementHandler) Events(c *gin.Context) {

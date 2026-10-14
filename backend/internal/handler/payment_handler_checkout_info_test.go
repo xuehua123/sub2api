@@ -168,4 +168,45 @@ func TestGetCheckoutInfoExposesAlipayMobilePrecreateDeepLinkForOfficialMethod(t 
 	require.True(t, resp.Data.AlipayMobilePrecreateDeepLink)
 }
 
+func TestGetCheckoutInfoLocalizesEveryPlanGroupWithoutChangingServiceData(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+	groups := []service.PlanGroupInfo{
+		{ID: 10, Name: "标准", I18n: service.GroupI18n{"en": {Name: "Standard"}}},
+		{ID: 11, Name: "高级", I18n: service.GroupI18n{"en": {Name: "Premium"}}},
+		{ID: 12, Name: "无译文"},
+	}
+	h := NewPaymentHandler(nil, &checkoutInfoConfigServiceStub{
+		planResponses: []service.SubscriptionPlanResponse{{ID: 7, GroupID: 11, GroupName: "高级", Groups: groups}},
+	})
+	for _, test := range []struct {
+		language string
+		primary  string
+		names    []string
+	}{
+		{language: "en-US,en;q=0.9", primary: "Premium", names: []string{"Standard", "Premium", "无译文"}},
+		{language: "zh", primary: "高级", names: []string{"标准", "高级", "无译文"}},
+	} {
+		recorder := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(recorder)
+		ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/payment/checkout-info", nil)
+		ctx.Request.Header.Set("Accept-Language", test.language)
+		h.GetCheckoutInfo(ctx)
+		require.Equal(t, http.StatusOK, recorder.Code)
+		var envelope struct {
+			Data checkoutInfoResponse `json:"data"`
+		}
+		require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &envelope))
+		require.Len(t, envelope.Data.Plans, 1)
+		require.Equal(t, test.primary, envelope.Data.Plans[0].GroupName)
+		for i, name := range test.names {
+			require.Equal(t, name, envelope.Data.Plans[0].Groups[i].Name)
+		}
+		require.NotContains(t, recorder.Body.String(), `"i18n"`)
+	}
+	require.Equal(t, "标准", groups[0].Name)
+	require.Equal(t, "高级", groups[1].Name)
+	require.NotEmpty(t, groups[0].I18n)
+}
+
 func ptrFloat(value float64) *float64 { return &value }

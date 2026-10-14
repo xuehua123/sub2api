@@ -111,6 +111,10 @@ type Group struct {
 	IsExclusive    bool    `json:"is_exclusive"`
 	Status         string  `json:"status"`
 
+	// I18n 名称与描述的各语言译文。只有管理端输出；用户侧接口经 Localized 把
+	// name/description 换成请求语言的版本后清空本字段。
+	I18n domain.GroupI18n `json:"i18n,omitempty"`
+
 	SubscriptionType          string   `json:"subscription_type"`
 	BalanceEnabled            bool     `json:"balance_enabled"`
 	SubscriptionEnabled       bool     `json:"subscription_enabled"`
@@ -830,11 +834,12 @@ type UserSubscriptionAlias struct {
 }
 
 type UserEntitlementGroup struct {
-	ID             int64   `json:"id"`
-	Name           string  `json:"name"`
-	Platform       string  `json:"platform"`
-	RateMultiplier float64 `json:"rate_multiplier"`
-	SortOrder      int     `json:"sort_order"`
+	ID             int64            `json:"id"`
+	Name           string           `json:"name"`
+	I18n           domain.GroupI18n `json:"-"`
+	Platform       string           `json:"platform"`
+	RateMultiplier float64          `json:"rate_multiplier"`
+	SortOrder      int              `json:"sort_order"`
 }
 
 type UserEntitlement struct {

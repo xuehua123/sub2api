@@ -55,6 +55,13 @@ func FromBodyCandidates(routePath, contentType string, body []byte) []string {
 		session = jsonSessionModelCandidates(body)
 	}
 
+	// Gemini 缓存创建接受 models/{id}，准入与 handler 统一成公开模型名。
+	if routePath == "/v1beta/cachedContents" {
+		for i := range topLevel {
+			topLevel[i] = strings.TrimPrefix(topLevel[i], "models/")
+		}
+	}
+
 	if IsLiveRequestRoute(routePath) {
 		if len(session) > 0 {
 			return session

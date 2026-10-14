@@ -79,7 +79,7 @@ func (h *SubscriptionHandler) List(c *gin.Context) {
 			response.ErrorFrom(c, err)
 			return
 		}
-		response.Success(c, dto.UserSubscriptionAliasesFromEntitlements(entitlements))
+		response.Success(c, dto.LocalizeUserSubscriptionAliases(dto.UserSubscriptionAliasesFromEntitlements(entitlements), c.GetHeader("Accept-Language")))
 		return
 	}
 
@@ -91,7 +91,7 @@ func (h *SubscriptionHandler) List(c *gin.Context) {
 
 	out := make([]dto.UserSubscription, 0, len(subscriptions))
 	for i := range subscriptions {
-		out = append(out, *dto.UserSubscriptionFromService(&subscriptions[i]))
+		out = append(out, *dto.UserSubscriptionFromService(&subscriptions[i]).Localized(c.GetHeader("Accept-Language")))
 	}
 	response.Success(c, out)
 }
@@ -111,7 +111,7 @@ func (h *SubscriptionHandler) GetActive(c *gin.Context) {
 			response.ErrorFrom(c, err)
 			return
 		}
-		response.Success(c, dto.UserSubscriptionAliasesFromEntitlements(entitlements))
+		response.Success(c, dto.LocalizeUserSubscriptionAliases(dto.UserSubscriptionAliasesFromEntitlements(entitlements), c.GetHeader("Accept-Language")))
 		return
 	}
 
@@ -123,7 +123,7 @@ func (h *SubscriptionHandler) GetActive(c *gin.Context) {
 
 	out := make([]dto.UserSubscription, 0, len(subscriptions))
 	for i := range subscriptions {
-		out = append(out, *dto.UserSubscriptionFromService(&subscriptions[i]))
+		out = append(out, *dto.UserSubscriptionFromService(&subscriptions[i]).Localized(c.GetHeader("Accept-Language")))
 	}
 	response.Success(c, out)
 }
@@ -188,7 +188,7 @@ func (h *SubscriptionHandler) AdvanceMonthlyCycle(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	response.Success(c, advanceMonthlyCycleResponseFromService(result))
+	response.Success(c, advanceMonthlyCycleResponseFromService(result, c.GetHeader("Accept-Language")))
 }
 
 func (h *SubscriptionHandler) Delete(c *gin.Context) {
@@ -209,11 +209,11 @@ func (h *SubscriptionHandler) Delete(c *gin.Context) {
 	response.Success(c, gin.H{"success": true})
 }
 
-func advanceMonthlyCycleResponseFromService(result *service.AdvanceMonthlyCycleResult) *AdvanceMonthlyCycleResponse {
+func advanceMonthlyCycleResponseFromService(result *service.AdvanceMonthlyCycleResult, acceptLanguage string) *AdvanceMonthlyCycleResponse {
 	if result == nil {
 		return nil
 	}
-	subscription := dto.UserSubscriptionFromService(result.Subscription)
+	subscription := dto.UserSubscriptionFromService(result.Subscription).Localized(acceptLanguage)
 	if subscription != nil {
 		subscription.User = nil
 	}
@@ -252,8 +252,11 @@ func (h *SubscriptionHandler) GetProgress(c *gin.Context) {
 			// Skip subscriptions with errors
 			continue
 		}
+		if sub.Group != nil {
+			progress.GroupName = sub.Group.I18n.LocalizeName(c.GetHeader("Accept-Language"), progress.GroupName)
+		}
 		result = append(result, SubscriptionProgressInfo{
-			Subscription: dto.UserSubscriptionFromService(sub),
+			Subscription: dto.UserSubscriptionFromService(sub).Localized(c.GetHeader("Accept-Language")),
 			Progress:     progress,
 		})
 	}
@@ -292,7 +295,7 @@ func (h *SubscriptionHandler) GetSummary(c *gin.Context) {
 
 		// Add group info if preloaded
 		if sub.Group != nil {
-			item.GroupName = sub.Group.Name
+			item.GroupName = sub.Group.I18n.LocalizeName(c.GetHeader("Accept-Language"), sub.Group.Name)
 			if sub.Group.DailyLimitUSD != nil {
 				item.DailyLimitUSD = *sub.Group.DailyLimitUSD
 			}

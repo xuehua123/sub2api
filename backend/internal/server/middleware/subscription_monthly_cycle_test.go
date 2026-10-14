@@ -17,6 +17,8 @@ func TestMonthlyCycleBillableRequest(t *testing.T) {
 		{"POST", "/v1/images/batches", true}, {"POST", "/v1/images/generations/async", true},
 		{"GET", "/v1/usage", false}, {"GET", "/v1/sub2api/billing", false}, {"GET", "/v1/images/tasks/42", false},
 		{"POST", "/v1/messages/count_tokens", false}, {"POST", "/v1/responses/input_tokens", false},
+		{"POST", "/v1beta/cachedContents", true}, {"PATCH", "/v1beta/cachedContents/cache-id", true},
+		{"GET", "/v1beta/cachedContents", false}, {"GET", "/v1beta/cachedContents/cache-id", false}, {"DELETE", "/v1beta/cachedContents/cache-id", false},
 		{"GET", "/v1/models", false}, {"POST", "/v1/images/batches/42/cancel", false}, {"GET", "/v1/videos/42", false},
 	} {
 		t.Run(tc.method+tc.path, func(t *testing.T) {

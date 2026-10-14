@@ -206,6 +206,7 @@ func groupFromServiceBase(g *service.Group) Group {
 		ID:                              g.ID,
 		Name:                            g.Name,
 		Description:                     g.Description,
+		I18n:                            g.I18n,
 		Platform:                        g.Platform,
 		RateMultiplier:                  g.RateMultiplier,
 		SortOrder:                       g.SortOrder,
@@ -1213,6 +1214,7 @@ func userEntitlementGroups(ent *service.SubscriptionEntitlement) []UserEntitleme
 			item := UserEntitlementGroup{ID: grant.GroupID, SortOrder: grant.SortOrder}
 			if grant.Group != nil {
 				item.Name = grant.Group.Name
+				item.I18n = grant.Group.I18n
 				item.Platform = grant.Group.Platform
 				item.RateMultiplier = grant.Group.RateMultiplier
 			}
@@ -1232,6 +1234,7 @@ func userEntitlementGroups(ent *service.SubscriptionEntitlement) []UserEntitleme
 		out = append(out, UserEntitlementGroup{
 			ID:             group.ID,
 			Name:           group.Name,
+			I18n:           group.I18n,
 			Platform:       group.Platform,
 			RateMultiplier: normalizedGroupRate(group.RateMultiplier),
 			SortOrder:      group.SortOrder,

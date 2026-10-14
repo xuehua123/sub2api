@@ -7,13 +7,21 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// Only generation submissions can consume a future cycle. Discovery, token
+// Generation and cache storage submissions can consume a future cycle. Discovery, token
 // counting, billing, polling and cancellation must remain side-effect free.
 func isMonthlyCycleBillableRequest(c *gin.Context) bool {
-	if c == nil || c.Request == nil || c.Request.Method != http.MethodPost {
+	if c == nil || c.Request == nil {
 		return false
 	}
+	// 显式缓存的创建和有效期修改产生存储费，使用同一权益周期准入。
 	path := strings.TrimSuffix(c.Request.URL.Path, "/")
+	if c.Request.Method == http.MethodPost && path == "/v1beta/cachedContents" ||
+		c.Request.Method == http.MethodPatch && strings.HasPrefix(path, "/v1beta/cachedContents/") {
+		return true
+	}
+	if c.Request.Method != http.MethodPost {
+		return false
+	}
 	for _, suffix := range []string{"/alpha/search", "/web_search", "/x_search", "/live", "/realtime/calls", "/contents/generations/tasks"} {
 		if strings.HasSuffix(path, suffix) {
 			return true

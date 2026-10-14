@@ -141,6 +141,14 @@ var (
 		CacheReadInputTokenCost: 0.2e-6,
 		LiteLLMProvider:         "anthropic", Mode: "chat", SupportsPromptCaching: true,
 	}
+	claudeHaiku55FallbackPricing = &LiteLLMModelPricing{
+		InputCostPerToken: 1e-7, OutputCostPerToken: 5e-7,
+		CacheCreationInputTokenCost: 1.25e-7, CacheCreationInputTokenCostAbove1hr: 2e-7,
+		CacheReadInputTokenCost:        1e-8,
+		LongContextInputTokenThreshold: 100000,
+		LongContextInputCostMultiplier: 5, LongContextOutputCostMultiplier: 5,
+		LiteLLMProvider: "anthropic", Mode: "chat", SupportsPromptCaching: true,
+	}
 	openAIGPT56SolFallbackPricing = &LiteLLMModelPricing{
 		InputCostPerToken:                   5e-06,
 		InputCostPerTokenPriority:           1e-05,
@@ -211,6 +219,7 @@ type CatalogPricingFields struct {
 }
 
 type LiteLLMModelPricing struct {
+	CacheStorageCostPerTokenPerHour          float64                   `json:"cache_storage_cost_per_token_per_hour"`
 	CacheCreationInputTokenCostExplicit      bool                      `json:"-"`
 	CatalogPrices                            *CatalogPricingFields     `json:"-"`
 	InputCostPerToken                        float64                   `json:"input_cost_per_token"`
@@ -266,6 +275,7 @@ type PricingRemoteClient interface {
 
 // LiteLLMRawEntry 用于解析原始JSON数据
 type LiteLLMRawEntry struct {
+	CacheStorageCostPerTokenPerHour          *float64 `json:"cache_storage_cost_per_token_per_hour"`
 	InputCostPerToken                        *float64 `json:"input_cost_per_token"`
 	InputCostPerTokenPriority                *float64 `json:"input_cost_per_token_priority"`
 	InputCostPerTokenAbove200K               *float64 `json:"input_cost_per_token_above_200k_tokens"`
@@ -809,6 +819,9 @@ func (s *PricingService) parsePricingData(body []byte) (map[string]*LiteLLMModel
 		pricing.ContextPriceTiers = extractContextPriceTiers(rawEntry)
 		if entry.CacheReadInputImageTokenCost != nil {
 			pricing.CacheReadInputImageTokenCost = *entry.CacheReadInputImageTokenCost
+		}
+		if entry.CacheStorageCostPerTokenPerHour != nil {
+			pricing.CacheStorageCostPerTokenPerHour = *entry.CacheStorageCostPerTokenPerHour
 		}
 
 		hasExplicitLongContext := entry.LongContextInputTokenThreshold != nil ||
@@ -1605,6 +1618,12 @@ func (s *PricingService) matchByModelFamily(model string) *LiteLLMModelPricing {
 			return pricing
 		}
 		return claudeSonnet55FallbackPricing
+	}
+	if claude.IsHaiku55(model) {
+		if pricing, ok := s.pricingData["claude-haiku-5-5"]; ok {
+			return pricing
+		}
+		return claudeHaiku55FallbackPricing
 	}
 	// modelFamily 定义一个模型系列的匹配和定价查找规则。
 	type modelFamily struct {

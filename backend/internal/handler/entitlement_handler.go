@@ -61,7 +61,7 @@ func (h *EntitlementHandler) List(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	response.Success(c, dto.UserEntitlementsFromService(entitlements, h.now()))
+	response.Success(c, dto.LocalizeUserEntitlements(dto.UserEntitlementsFromService(entitlements, h.now()), c.GetHeader("Accept-Language")))
 }
 
 func (h *EntitlementHandler) GetActive(c *gin.Context) {
@@ -80,7 +80,7 @@ func (h *EntitlementHandler) GetActive(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	response.Success(c, dto.UserEntitlementsFromService(entitlements, h.now()))
+	response.Success(c, dto.LocalizeUserEntitlements(dto.UserEntitlementsFromService(entitlements, h.now()), c.GetHeader("Accept-Language")))
 }
 
 func (h *EntitlementHandler) entitlementsEnabled(c *gin.Context) bool {
@@ -106,7 +106,7 @@ func (h *EntitlementHandler) GetProgress(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	response.Success(c, dto.UserEntitlementFromService(entitlement, h.now()))
+	response.Success(c, dto.UserEntitlementFromService(entitlement, h.now()).Localized(c.GetHeader("Accept-Language")))
 }
 
 func (h *EntitlementHandler) Delete(c *gin.Context) {
@@ -153,15 +153,15 @@ func (h *EntitlementHandler) AdvanceMonthlyCycle(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	response.Success(c, advanceEntitlementMonthlyCycleResponseFromService(result, h.now()))
+	response.Success(c, advanceEntitlementMonthlyCycleResponseFromService(result, h.now(), c.GetHeader("Accept-Language")))
 }
 
-func advanceEntitlementMonthlyCycleResponseFromService(result *service.AdvanceEntitlementMonthlyCycleResult, now time.Time) *AdvanceEntitlementMonthlyCycleResponse {
+func advanceEntitlementMonthlyCycleResponseFromService(result *service.AdvanceEntitlementMonthlyCycleResult, now time.Time, acceptLanguage string) *AdvanceEntitlementMonthlyCycleResponse {
 	if result == nil {
 		return nil
 	}
 	return &AdvanceEntitlementMonthlyCycleResponse{
-		Entitlement:           dto.UserEntitlementFromService(result.Entitlement, now),
+		Entitlement:           dto.UserEntitlementFromService(result.Entitlement, now).Localized(acceptLanguage),
 		PreviousExpiresAt:     result.PreviousExpiresAt,
 		NewExpiresAt:          result.NewExpiresAt,
 		DeductedDays:          result.DeductedDays,
