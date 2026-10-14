@@ -98,6 +98,23 @@ func (s *APIKeyService) finishEntitlementAuth(ctx context.Context, ent *Subscrip
 	return s.entitlementAuthResult(ctx, ent, group, switched, fromGroupID, group.ID, reason, userID), nil
 }
 
+// LoadFixedChargeEntitlement refreshes the binding and quota windows after registering
+// the fixed-charge reservation. It does not consume another monthly cycle.
+func (s *APIKeyService) LoadFixedChargeEntitlement(ctx context.Context, apiKey *APIKey, entitlementID int64) (*SubscriptionEntitlement, error) {
+	if s == nil || s.subscriptionEntitlementSvc == nil || apiKey == nil || apiKey.User == nil || apiKey.Group == nil {
+		return nil, ErrBillingServiceUnavailable
+	}
+	now := s.subscriptionEntitlementSvc.inputNow(time.Time{})
+	resolution, err := s.subscriptionEntitlementSvc.ValidateBindingForGroup(ctx, apiKey.User.ID, apiKey.Group.ID, entitlementID, now)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.subscriptionEntitlementSvc.CheckAndResetWindows(ctx, resolution.Entitlement, now); err != nil {
+		return nil, err
+	}
+	return resolution.Entitlement, nil
+}
+
 // AdmitEntitlementGeneration runs after local generation checks, using current settings.
 func (s *APIKeyService) AdmitEntitlementGeneration(ctx context.Context, apiKey *APIKey, entitlementID int64, expectedCost ...float64) (result *APIKeyEntitlementAuthResult, admissionErr error) {
 	defer func() {

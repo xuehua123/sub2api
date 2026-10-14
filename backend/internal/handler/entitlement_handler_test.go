@@ -526,6 +526,7 @@ func TestEntitlementHandler_AdvanceMonthlyCycleUsesSubjectOwnerAndPublicDTO(t *t
 		Groups: []service.Group{{
 			ID:               101,
 			Name:             "OpenAI Pro",
+			I18n:             service.GroupI18n{"zh": {Name: "高级分组"}},
 			Platform:         service.PlatformOpenAI,
 			RateMultiplier:   1,
 			Status:           service.StatusActive,
@@ -544,7 +545,7 @@ func TestEntitlementHandler_AdvanceMonthlyCycleUsesSubjectOwnerAndPublicDTO(t *t
 	})
 	router.POST("/entitlements/:id/advance-monthly-cycle", h.AdvanceMonthlyCycle)
 
-	resp := performJSONRequest(router, http.MethodPost, "/entitlements/22/advance-monthly-cycle", nil)
+	resp := performLocalizedJSONRequest(router, http.MethodPost, "/entitlements/22/advance-monthly-cycle", nil, "zh")
 
 	require.Equal(t, http.StatusOK, resp.Code)
 	require.NotContains(t, resp.Body.String(), `"subscription"`)
@@ -563,6 +564,10 @@ func TestEntitlementHandler_AdvanceMonthlyCycleUsesSubjectOwnerAndPublicDTO(t *t
 	require.Equal(t, float64(0), entitlement["monthly_usage_usd"])
 	require.NotContains(t, entitlement, "source_id")
 	require.NotContains(t, entitlement, "notes")
+	groups := entitlement["groups"].([]any)
+	require.Len(t, groups, 1)
+	require.Equal(t, "高级分组", groups[0].(map[string]any)["name"])
+	require.NotContains(t, resp.Body.String(), `"i18n"`)
 }
 
 func TestEntitlementHandler_AdvanceMonthlyCycleCrossUserReturnsNotFound(t *testing.T) {

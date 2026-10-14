@@ -91,7 +91,7 @@ func (h *PaymentHandler) GetPlans(c *gin.Context) {
 		gi := groupInfo[p.GroupID]
 		result = append(result, planWithPlatform{
 			ID: int64(p.ID), GroupID: p.GroupID,
-			GroupPlatform: gi.Platform, GroupName: gi.Name,
+			GroupPlatform: gi.Platform, GroupName: gi.I18n.LocalizeName(c.GetHeader("Accept-Language"), gi.Name),
 			RateMultiplier: gi.RateMultiplier, PeakRateEnabled: gi.PeakRateEnabled,
 			PeakStart: gi.PeakStart, PeakEnd: gi.PeakEnd, PeakRateMultiplier: gi.PeakRateMultiplier,
 			Name: p.Name, Description: p.Description, Price: p.Price, OriginalPrice: p.OriginalPrice,
@@ -144,9 +144,9 @@ func (h *PaymentHandler) GetCheckoutInfo(c *gin.Context) {
 			ID:                 p.ID,
 			GroupID:            p.GroupID,
 			GroupIDs:           p.GroupIDs,
-			Groups:             p.Groups,
+			Groups:             checkoutLocalizedPlanGroups(p.Groups, c.GetHeader("Accept-Language")),
 			GroupPlatform:      p.GroupPlatform,
-			GroupName:          p.GroupName,
+			GroupName:          primaryGroup.I18n.LocalizeName(c.GetHeader("Accept-Language"), p.GroupName),
 			RateMultiplier:     p.RateMultiplier,
 			PeakRateEnabled:    primaryGroup.PeakRateEnabled,
 			PeakStart:          primaryGroup.PeakStart,
@@ -242,6 +242,18 @@ type checkoutPlan struct {
 	ProductName        string                  `json:"product_name"`
 	ForSale            bool                    `json:"for_sale"`
 	SortOrder          int                     `json:"sort_order"`
+}
+
+func checkoutLocalizedPlanGroups(groups []service.PlanGroupInfo, acceptLanguage string) []service.PlanGroupInfo {
+	if groups == nil {
+		return nil
+	}
+	out := append([]service.PlanGroupInfo{}, groups...)
+	for i := range out {
+		out[i].Name = out[i].I18n.LocalizeName(acceptLanguage, out[i].Name)
+		out[i].I18n = nil
+	}
+	return out
 }
 
 func checkoutPrimaryPlanGroup(p service.SubscriptionPlanResponse) service.PlanGroupInfo {
