@@ -44,6 +44,8 @@
 
 先稳如狗蓝绿与约 30 分钟关键业务观察，通过后加拿大蓝绿与约 30 分钟观察。发布前分别记录回滚状态、迁移及公开健康基线。美国仅核验公开中继，不部署或传递应用/数据库秘密；法国仅缓存同一 digest，保持 PostgreSQL/Redis 副本与应用停止。Prompt Audit 保持关闭，不修改 DNS 或数据库角色。
 
-## CI 事件触发恢复
+## GitHub Actions 外部阻塞
 
-推送、PR 创建/重开和 GitHub API 引用更新均未产生新的 workflow/check run；仓库 Actions 与工作流均启用。为完整 CI 与 Security Scan 添加 workflow_dispatch，仅增加指定分支的手动入口，全部既有作业、权限、判定条件保持不变。手动门禁通过不代替 main 精确提交的门禁与可信镜像验证。
+截至北京时间 2026-10-17，GitHub 页面明确显示：Workflows are not currently being run on this fork due to the scale of GitHub Actions usage. A repository maintainer can choose to re-enable these. API dispatch 返回 HTTP 422 / Actions has been disabled for this repository。普通 Actions 权限写回 enabled=true 与逐工作流 enable 均不能解除该 fork 级状态。
+
+推送、PR 重开、原生 API 引用更新都没有产生 Actions 运行。临时尝试的 workflow_dispatch 入口已经撤回，既有 workflow 内容保持原样。浏览器会话未登录，需要维护者在 GitHub Actions 页面登录并重新启用。恢复后重触发最新分支完整门禁，再按流程合并 main、等待精确 main CI 和不可变镜像、稳如狗及加拿大各观察约 30 分钟。没有绕过门禁、合并 main 或变更生产。
