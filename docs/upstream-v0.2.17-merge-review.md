@@ -49,3 +49,7 @@
 截至北京时间 2026-10-17，GitHub 页面明确显示：Workflows are not currently being run on this fork due to the scale of GitHub Actions usage. A repository maintainer can choose to re-enable these. API dispatch 返回 HTTP 422 / Actions has been disabled for this repository。普通 Actions 权限写回 enabled=true 与逐工作流 enable 均不能解除该 fork 级状态。
 
 推送、PR 重开、原生 API 引用更新都没有产生 Actions 运行。临时尝试的 workflow_dispatch 入口已经撤回，既有 workflow 内容保持原样。浏览器会话未登录，需要维护者在 GitHub Actions 页面登录并重新启用。恢复后重触发最新分支完整门禁，再按流程合并 main、等待精确 main CI 和不可变镜像、稳如狗及加拿大各观察约 30 分钟。没有绕过门禁、合并 main 或变更生产。
+
+## Actions 恢复
+
+北京时间 2026-10-17，维护者登录后的 Actions 页面已显示 Actions Enabled。重新推送本验证记录以触发升级分支的完整 CI 与 Security Scan；实际运行和所有作业成功仍须逐项核验，然后合并 main 并验证该精确提交的可信镜像。
