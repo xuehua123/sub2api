@@ -245,3 +245,11 @@ d1ba57977d2dfec66d06438a9e8863ae72935c6c:README_CN.md:curl-auth-header:756
 index/backend/internal/service/testdata/upstream_protocol_routing_main_golden.json:generic-api-key:4
 worktree/backend/internal/service/testdata/upstream_protocol_routing_main_golden.json:generic-api-key:4
 387ee20ed11bc221198714d15fcedcf8c134e9d0:backend/internal/service/testdata/upstream_protocol_routing_main_golden.json:generic-api-key:4
+
+# v0.2.17: existing documentation placeholders and synthetic Alipay fixture moved.
+index/README.md:curl-auth-header:830
+worktree/README.md:curl-auth-header:830
+index/README_CN.md:curl-auth-header:746
+worktree/README_CN.md:curl-auth-header:746
+index/backend/internal/payment/provider/alipay_test.go:generic-api-key:68
+worktree/backend/internal/payment/provider/alipay_test.go:generic-api-key:68

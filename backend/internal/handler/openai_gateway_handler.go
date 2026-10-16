@@ -2610,6 +2610,11 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			closeOpenAIClientWS(wsConn, coderws.StatusInternalError, "Failed to resolve composite model route")
 			return
 		}
+		if decision.OAuthAmbiguous() {
+			service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalModelConfiguration)
+			closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, decision.AmbiguousMessage())
+			return
+		}
 		if decision.Matched {
 			ctx = service.WithCompositeRouteDecision(ctx, decision)
 			c.Request = c.Request.WithContext(ctx)
