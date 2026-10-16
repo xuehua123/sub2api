@@ -142,6 +142,8 @@ type RefundPlan struct {
 	EntitlementSnapshot  *SubscriptionEntitlement
 	EntitlementUpdatedAt time.Time
 	EntitlementRevoked   bool
+	// deductionHeld prevents deducting a pending refund twice.
+	deductionHeld bool
 }
 
 type RefundResult struct {
