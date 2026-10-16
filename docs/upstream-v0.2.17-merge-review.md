@@ -43,3 +43,7 @@
 用户授权按完整流程完成发布。本文件是合并评审，不表示生产已发布。必须等待分支和 main 的配置 CI 门禁，通过后核验 fork tag、VERSION、OCI version/revision/source/trusted-ci 与不可变 digest。
 
 先稳如狗蓝绿与约 30 分钟关键业务观察，通过后加拿大蓝绿与约 30 分钟观察。发布前分别记录回滚状态、迁移及公开健康基线。美国仅核验公开中继，不部署或传递应用/数据库秘密；法国仅缓存同一 digest，保持 PostgreSQL/Redis 副本与应用停止。Prompt Audit 保持关闭，不修改 DNS 或数据库角色。
+
+## CI 事件触发恢复
+
+推送、PR 创建/重开和 GitHub API 引用更新均未产生新的 workflow/check run；仓库 Actions 与工作流均启用。为完整 CI 与 Security Scan 添加 workflow_dispatch，仅增加指定分支的手动入口，全部既有作业、权限、判定条件保持不变。手动门禁通过不代替 main 精确提交的门禁与可信镜像验证。
