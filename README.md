@@ -4,7 +4,7 @@
 
 # Sub2API
 
-[![Go](https://img.shields.io/badge/Go-1.27.2-00ADD8.svg)](https://golang.org/)
+[![Go](https://img.shields.io/badge/Go-1.27.3-00ADD8.svg)](https://golang.org/)
 [![Vue](https://img.shields.io/badge/Vue-3.4+-4FC08D.svg)](https://vuejs.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-336791.svg)](https://www.postgresql.org/)
 [![Redis](https://img.shields.io/badge/Redis-7+-DC382D.svg)](https://redis.io/)
@@ -151,6 +151,16 @@ Please read the following carefully before using this project:
 <td>Modelflare: Full strength, stable, nothing watered down. Global SOTA models at a lower cost. Operated by US-based Havenbyte LLC, Modelflare supports GPT, Claude, Gemini, Grok, and other leading models through common compatible protocols, plus 40+ image and video models. Cache compensation is a highlight: selected OpenAI groups (price-first, stable, and premium) guarantee daily cache hit rates of 65%, 75%, or 85%, and if eligible requests fall short, Modelflare refunds the difference, visible on the usage dashboard after settlement. Special offers: a single top-up of US$20 unlocks the GPT discount group at a 0.015x price multiplier, and a single top-up of US$50 unlocks the Claude discount group at a 0.03x multiplier. Register via <a href="https://modelflare.dev/sign-up?utm_source=github&utm_campaign=sub2api">this exclusive link</a> to get started.</td>
 </tr>
 
+<tr>
+<td width="180"><a href="https://x.com/chenju_ai"><img src="assets/partners/logos/chenju_ai.png" alt="Chenju" width="150"></a></td>
+<td>Thanks to <a href="https://x.com/chenju_ai">Chenju</a> for sponsoring this project! This is probably the only ad slot in this section that doesn't ask you to sign up for anything. Good open-source projects deserve to be paid for, so Chenju is chipping in a gift and raising a glass to the author. Find <a href="https://x.com/chenju_ai">Chenju</a> on X to chat about API relays, upstream providers, or just shoot the breeze.</td>
+</tr>
+
+<tr>
+<td width="180"><a href="https://t.me/AACC8888888"><img src="assets/partners/logos/ooko.ai.png" alt="ooko.ai" width="150"></a></td>
+<td>🔑 Buying AI accounts at top prices | Gemini · Claude · GPT | Main and alt accounts all welcome, any channel wanted | Pay-per-usage supported | Seeking first-hand resources from major providers, I'll bring the KEY.<br>WeChat: Liuyou-zawd | Telegram: <a href="https://t.me/AACC8888888">AACC8888888</a></td>
+</tr>
+
 </table>
 
 ## Overview
@@ -183,7 +193,7 @@ Community projects that extend or integrate with Sub2API:
 
 | Component | Technology |
 |-----------|------------|
-| Backend | Go 1.27.2, Gin, Ent |
+| Backend | Go 1.27.3, Gin, Ent |
 | Frontend | Vue 3.4+, Vite 5+, TailwindCSS |
 | Database | PostgreSQL 15+ |
 | Cache/Queue | Redis 7+ |
@@ -462,7 +472,7 @@ Build and run from source code for development or customization.
 
 #### Prerequisites
 
-- Go 1.27.2+
+- Go 1.27.3+
 - Node.js 18+
 - PostgreSQL 15+
 - Redis 7+

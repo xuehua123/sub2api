@@ -344,3 +344,29 @@ func TestApplyUsageBillingLegacyFallbackUsesQuantizedAmount(t *testing.T) {
 }
 
 var _ billingBalanceNotifier = (*quantizedBillingNotifierStub)(nil)
+
+func TestApplyUsageBillingServiceAccountQuotaUsesQuantizedCostAndPeriodHints(t *testing.T) {
+	const rawCost = 0.000078125
+	effects := make(chan quantizedBillingEffect, 4)
+	repo := &quantizedBillingRepoStub{result: &UsageBillingApplyResult{
+		Applied: true, QuotaState: &AccountQuotaState{},
+	}}
+	params := &postUsageBillingParams{
+		Cost:   &CostBreakdown{ActualCost: rawCost, TotalCost: rawCost},
+		User:   &User{ID: 104, Balance: 100},
+		APIKey: &APIKey{ID: 204},
+		Account: &Account{ID: 304, Platform: PlatformGemini, Type: AccountTypeServiceAccount,
+			Extra: map[string]any{"quota_limit": 1.0, "quota_daily_limit": 1.0, "quota_weekly_limit": 1.0}},
+		AccountRateMultiplier: 1.25,
+	}
+	_, err := applyUsageBilling(context.Background(), "quantized-service-account", &UsageLog{ActualCost: rawCost}, params,
+		&billingDeps{deferredService: &DeferredService{}, balanceNotifyService: &quantizedBillingNotifierStub{effects: effects}}, repo)
+	require.NoError(t, err)
+	require.NotNil(t, repo.cmd)
+	require.Equal(t, QuantizeUsageBillingAmount(rawCost*1.25), repo.cmd.AccountQuotaCost)
+	require.True(t, repo.cmd.AccountQuotaHasDailyLimit)
+	require.True(t, repo.cmd.AccountQuotaHasWeeklyLimit)
+	got := collectQuantizedBillingEffects(t, effects, 2)
+	require.Equal(t, repo.cmd.AccountQuotaCost, got[quantizedBillingEffectAccountNotification].amount)
+	require.Equal(t, repo.cmd.BalanceCost, got[quantizedBillingEffectBalanceNotification].amount)
+}
