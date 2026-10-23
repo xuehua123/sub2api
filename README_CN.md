@@ -4,7 +4,7 @@
 
 # Sub2API
 
-[![Go](https://img.shields.io/badge/Go-1.27.2-00ADD8.svg)](https://golang.org/)
+[![Go](https://img.shields.io/badge/Go-1.27.3-00ADD8.svg)](https://golang.org/)
 [![Vue](https://img.shields.io/badge/Vue-3.4+-4FC08D.svg)](https://vuejs.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-336791.svg)](https://www.postgresql.org/)
 [![Redis](https://img.shields.io/badge/Redis-7+-DC382D.svg)](https://redis.io/)
@@ -154,6 +154,16 @@
 <td>Modelflare：满血稳定不掺水，低成本享受全球 SOTA 模型。站点由美国 LLC 主体 Havenbyte LLC 运营，支持 GPT、Claude、Gemini、Grok 等主流模型和常用兼容协议，还支持 40 多种图片和视频模型。缓存补偿是一大亮点：部分 OpenAI 价格优先、稳定和高级分组提供每日 65%、75%、85% 的缓存命中率保障，符合条件的请求没达到目标的，平台补偿差额，结算后可在用量看板查看。特惠活动：单笔充值 US$20 即可解锁 0.015 倍价格倍率的 GPT 特惠分组，单笔充值 US$50 即可解锁 0.03 倍价格倍率的 Claude 特惠分组。通过<a href="https://modelflare.dev/zh/sign-up?utm_source=github&utm_campaign=sub2api">专属链接</a>注册即可参与</td>
 </tr>
 
+<tr>
+<td width="180"><a href="https://x.com/chenju_ai"><img src="assets/partners/logos/chenju_ai.png" alt="Chenju" width="150"></a></td>
+<td>感谢 <a href="https://x.com/chenju_ai">陈局</a> 赞助了本项目！这大概是本栏唯一一个不让你注册的广告位。好的开源项目值得被付费，陈局来随个份子，敬作者一杯。X 上找 <a href="https://x.com/chenju_ai">陈局</a>，聊中转、聊上游、吹吹水。</td>
+</tr>
+
+<tr>
+<td width="180"><a href="https://t.me/AACC8888888"><img src="assets/partners/logos/ooko.ai.png" alt="ooko.ai" width="150"></a></td>
+<td>🔑 高价收 AI 账号｜Gemini · Claude · GPT｜大小号通收，各种渠道都要｜支持按量跑付｜寻一手大厂资源，我上 KEY 。<br>微信：Liuyou-zawd｜TG：<a href="https://t.me/AACC8888888">AACC8888888</a></td>
+</tr>
+
 </table>
 
 ## 项目概述
@@ -185,7 +195,7 @@ Sub2API 是一个 AI API 网关平台，用于分发和管理 AI 产品订阅的
 
 | 组件 | 技术 |
 |------|------|
-| 后端 | Go 1.27.2, Gin, Ent |
+| 后端 | Go 1.27.3, Gin, Ent |
 | 前端 | Vue 3.4+, Vite 5+, TailwindCSS |
 | 数据库 | PostgreSQL 15+ |
 | 缓存/队列 | Redis 7+ |
@@ -500,7 +510,7 @@ cd sub2api/deploy
 
 #### 前置条件
 
-- Go 1.27.2+
+- Go 1.27.3+
 - Node.js 18+
 - PostgreSQL 15+
 - Redis 7+
@@ -744,7 +754,7 @@ Sub2API 支持使用 TypeSafe API Key 账户，通过 Jev 原生、非流式的 
 
 ```bash
 curl https://your-sub2api.example.com/v1/systemone \
-  -H 'Authorization: Bearer sk-your-sub2api-key' \
+  -H "Authorization: Bearer $SUB2API_API_KEY" \
   -H 'Content-Type: application/json' \
   --data '{"model":"jev-latest","state":"待评估文本","questions":{"safety":{"type":"noul","instructions":"评估文本是否不安全"}}}'
 ```
