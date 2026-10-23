@@ -838,7 +838,7 @@ Question validation follows the TypeSafe OpenAPI wire schema (also used by SDK v
 
 ```bash
 curl https://your-sub2api.example.com/v1/systemone \
-  -H 'Authorization: Bearer sk-your-sub2api-key' \
+  -H "Authorization: Bearer $SUB2API_API_KEY" \
   -H 'Content-Type: application/json' \
   --data '{"model":"jev-latest","state":"Text to evaluate","questions":{"safety":{"type":"noul","instructions":"Evaluate whether the text is unsafe"}}}'
 ```

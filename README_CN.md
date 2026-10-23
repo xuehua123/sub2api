@@ -754,7 +754,7 @@ Sub2API 支持使用 TypeSafe API Key 账户，通过 Jev 原生、非流式的 
 
 ```bash
 curl https://your-sub2api.example.com/v1/systemone \
-  -H 'Authorization: Bearer sk-your-sub2api-key' \
+  -H "Authorization: Bearer $SUB2API_API_KEY" \
   -H 'Content-Type: application/json' \
   --data '{"model":"jev-latest","state":"待评估文本","questions":{"safety":{"type":"noul","instructions":"评估文本是否不安全"}}}'
 ```
