@@ -34,17 +34,18 @@ const (
 	NotificationEmailEventOpsAlert                    = "ops.alert"
 	NotificationEmailEventOpsScheduledReport          = "ops.scheduled_report"
 
-	notificationEmailTemplateKeyPrefix    = "notification_email_template:"
-	notificationEmailPreferenceKeyPrefix  = "notification_email_preference:"
-	notificationEmailDeliveryKeyPrefix    = "notification_email_delivery:"
-	notificationEmailLocaleUserKeyPrefix  = "notification_email_locale:user:"
-	notificationEmailLocaleEmailKeyPrefix = "notification_email_locale:email:"
-	notificationEmailUnsubscribeSecretKey = "notification_email_unsubscribe_secret"
-	notificationEmailDefaultLocale        = "en"
-	notificationEmailLocaleChinese        = "zh"
-	notificationEmailMaxSubjectLength     = 200
-	notificationEmailMaxHTMLLength        = 30000
-	notificationEmailUnsubscribeTTL       = 365 * 24 * time.Hour
+	notificationEmailTemplateKeyPrefix     = "notification_email_template:"
+	notificationEmailPreferenceKeyPrefix   = "notification_email_preference:"
+	notificationEmailDeliveryKeyPrefix     = "notification_email_delivery:"
+	notificationEmailLocaleUserKeyPrefix   = "notification_email_locale:user:"
+	notificationEmailLocaleEmailKeyPrefix  = "notification_email_locale:email:"
+	notificationEmailUnsubscribeSecretKey  = "notification_email_unsubscribe_secret"
+	notificationEmailDefaultLocale         = "en"
+	notificationEmailLocaleChinese         = "zh"
+	notificationEmailMaxSubjectLength      = 200
+	notificationEmailMaxHTMLLength         = 30000
+	notificationEmailUnsubscribeTTL        = 365 * 24 * time.Hour
+	notificationEmailReceiptPersistTimeout = 5 * time.Second
 )
 
 var (
@@ -424,9 +425,17 @@ func (s *NotificationEmailService) Send(ctx context.Context, input NotificationE
 		return notificationEmailDeliveryErr(err)
 	}
 	if deliveryKey != "" {
-		if err := s.settingRepo.Set(ctx, deliveryKey, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
-			return err
+		// SMTP has accepted the message. A scan/request deadline expiring during
+		// delivery must not prevent its receipt from suppressing the next send.
+		persistCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), notificationEmailReceiptPersistTimeout)
+		defer cancel()
+		if err := s.settingRepo.Set(persistCtx, deliveryKey, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+			slog.Warn("notification email accepted but receipt persistence failed",
+				"event", normalizedEvent, "recipient_hash", notificationEmailHash(recipient), "error", err)
+			return fmt.Errorf("persist notification email receipt after SMTP acceptance: %w", err)
 		}
+		slog.Info("notification email accepted and receipt persisted",
+			"event", normalizedEvent, "recipient_hash", notificationEmailHash(recipient))
 	}
 	return nil
 }
