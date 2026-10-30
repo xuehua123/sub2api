@@ -12,6 +12,7 @@ import (
 
 var codexModelMap = map[string]string{
 	"codex-auto-review":    "codex-auto-review",
+	"gpt-6.1-terra":        "gpt-6.1-terra",
 	"gpt-6.1-sol":          "gpt-6.1-sol",
 	"gpt-6-sol":            "gpt-6-sol",
 	"gpt-6-luna":           "gpt-6-luna",
@@ -70,6 +71,7 @@ var codexVersionModelPrefixes = []struct {
 	prefix string
 	target string
 }{
+	{prefix: "gpt-6.1-terra", target: "gpt-6.1-terra"},
 	{prefix: "gpt-6.1-sol", target: "gpt-6.1-sol"},
 	{prefix: "gpt-6-sol", target: "gpt-6-sol"},
 	{prefix: "gpt-6-luna", target: "gpt-6-luna"},

@@ -79,6 +79,9 @@ func TestAuthCacheInvalidationTrigger_AuthSnapshotColumns(t *testing.T) {
 	_, err = integrationDB.ExecContext(ctx, "UPDATE groups SET profit_min_margin = profit_min_margin WHERE id = $1", group.ID)
 	require.NoError(t, err)
 	require.Zero(t, count(), "利润字段无实际变化的 UPDATE 不得入队")
+	_, err = integrationDB.ExecContext(ctx, "UPDATE groups SET image_count_billing = image_count_billing WHERE id = $1", group.ID)
+	require.NoError(t, err)
+	require.Zero(t, count(), "按张计费开关无实际变化的 UPDATE 不得入队")
 
 	for name, update := range map[string]string{
 		"status":                               "status = 'disabled'",
@@ -96,6 +99,7 @@ func TestAuthCacheInvalidationTrigger_AuthSnapshotColumns(t *testing.T) {
 		"model_pricing":                        `model_pricing = '[{"platform":"openai","models":["gpt-5.5"],"billing_mode":"token","input_price":0.000001}]'::jsonb`,
 		"allow_image_generation":               "allow_image_generation = true",
 		"allow_batch_image_generation":         "allow_batch_image_generation = true",
+		"image_count_billing":                  "image_count_billing = NOT image_count_billing",
 		"image_rate_independent":               "image_rate_independent = true",
 		"image_rate_multiplier":                "image_rate_multiplier = 0.8",
 		"image_price_1k":                       "image_price_1k = 0.01",
@@ -121,11 +125,16 @@ func TestAuthCacheInvalidationTrigger_AuthSnapshotColumns(t *testing.T) {
 		"supported_model_scopes":               `supported_model_scopes = '["claude"]'::jsonb`,
 		"allow_messages_dispatch":              "allow_messages_dispatch = true",
 		"allow_live":                           "allow_live = true",
+		"force_openai_fast":                    "force_openai_fast = true",
+		"free_openai_fast":                     "free_openai_fast = true",
 		"default_mapped_model":                 "default_mapped_model = 'gpt-5'",
 		"messages_dispatch_model_config":       `messages_dispatch_model_config = '{"default_model": "gpt-5"}'::jsonb`,
-		"models_list_config":                   `models_list_config = '{"models": ["gpt-5"]}'::jsonb`,
+		"models_list_config":                   `models_list_config = '{"models": ["gpt-5.5"]}'::jsonb`,
+		"model_allowlist":                      `model_allowlist = '{"models": ["gpt-5"]}'::jsonb`,
+		"codex_models_manifest_config":         `codex_models_manifest_config = '{"models": ["gpt-5"]}'::jsonb`,
 		"rpm_limit":                            "rpm_limit = 123",
 		"max_reasoning_effort":                 "max_reasoning_effort = 'high'",
+		"max_reasoning_effort_over_limit":      "max_reasoning_effort_over_limit = 'deny'",
 		"reasoning_effort_mappings":            `reasoning_effort_mappings = '[{"from": "high", "to": "medium"}]'::jsonb`,
 		"peak_rate_enabled":                    "peak_rate_enabled = true",
 		"peak_start":                           "peak_start = '08:00'",
