@@ -275,6 +275,11 @@ func (s *ModelPlazaService) fillDisplayPricing(ctx context.Context, m *PlazaMode
 		cloned := groupPricing.Clone()
 		m.Pricing = &cloned
 		m.groupPricingOverride = true
+		// Fixed per-request and per-image prices are the actual charge and must not
+		// be replaced by a group's fallback image tier prices.
+		if groupPricing.BillingMode == BillingModeImage || groupPricing.BillingMode == BillingModePerRequest {
+			return
+		}
 	}
 	billingModel := strings.TrimSpace(m.billingModel)
 	if billingModel == "" {
