@@ -129,7 +129,7 @@ func TestAuthCacheInvalidationTrigger_AuthSnapshotColumns(t *testing.T) {
 		"free_openai_fast":                     "free_openai_fast = true",
 		"default_mapped_model":                 "default_mapped_model = 'gpt-5'",
 		"messages_dispatch_model_config":       `messages_dispatch_model_config = '{"default_model": "gpt-5"}'::jsonb`,
-		"models_list_config":                   `models_list_config = '{"models": ["gpt-5"]}'::jsonb`,
+		"models_list_config":                   `models_list_config = '{"models": ["gpt-5.5"]}'::jsonb`,
 		"model_allowlist":                      `model_allowlist = '{"models": ["gpt-5"]}'::jsonb`,
 		"codex_models_manifest_config":         `codex_models_manifest_config = '{"models": ["gpt-5"]}'::jsonb`,
 		"rpm_limit":                            "rpm_limit = 123",
