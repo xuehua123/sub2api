@@ -12,7 +12,7 @@ manifest={}
 for name in sorted(filter(None,files)):
  p=root/name
  if p.suffix not in {'.html','.css','.js','.png','.webp','.svg','.xml','.txt'}:continue
- if p.name in {'template.html','main-zh.png','add-zh.png','pipixia-provider.png','pipixia-provider-original.webp'}:continue
+ if p.name in {'template.html','main-zh.png','add-zh.png','pipixia-provider.png','pipixia-provider-original.webp','pipixia-provider.webp','pipixia-provider-original.png'}:continue
  rel=pathlib.PurePosixPath(name).relative_to('gateway').as_posix()
  data=p.read_bytes();target=out/'payload'/rel;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(data);manifest[rel]=hashlib.sha256(data).hexdigest()
 if len(manifest)<40:raise SystemExit('Missing tracked generated files')
