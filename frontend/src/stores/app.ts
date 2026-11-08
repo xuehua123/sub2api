@@ -407,6 +407,7 @@ export const useAppStore = defineStore('app', () => {
         allow_user_view_error_requests: false,
         model_price_usd_cny_rate: 7.0,
         model_price_cny_per_quota_usd: 0.068,
+        mcp_enabled: false,
       })
     }
 
