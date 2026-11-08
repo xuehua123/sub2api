@@ -213,6 +213,7 @@ type SystemSettings struct {
 
 	// Backend Mode
 	BackendModeEnabled bool `json:"backend_mode_enabled"`
+	MCPEnabled         bool `json:"mcp_enabled"`
 
 	// Gateway forwarding behavior
 	OpenAITTFTMode                         string `json:"openai_ttft_mode"`
@@ -472,6 +473,7 @@ type PublicSettings struct {
 	GitHubOAuthEnabled                  bool                                `json:"github_oauth_enabled"`
 	GoogleOAuthEnabled                  bool                                `json:"google_oauth_enabled"`
 	BackendModeEnabled                  bool                                `json:"backend_mode_enabled"`
+	MCPEnabled                          bool                                `json:"mcp_enabled"`
 	PaymentEnabled                      bool                                `json:"payment_enabled"`
 	ReferralEnabled                     bool                                `json:"referral_enabled"`
 	ReferralAllowManualInput            bool                                `json:"referral_allow_manual_input"`

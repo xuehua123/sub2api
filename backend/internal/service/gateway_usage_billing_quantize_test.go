@@ -67,6 +67,11 @@ func (s *quantizedBillingNotifierStub) CheckAccountQuotaAfterIncrement(_ context
 	s.effects <- quantizedBillingEffect{kind: quantizedBillingEffectAccountNotification, amount: cost}
 }
 
+func (*quantizedBillingNotifierStub) submitUsageNotifications(p *postUsageBillingParams, deps *billingDeps, result *UsageBillingApplyResult) {
+	notifyBalanceLow(context.Background(), p, deps, result)
+	notifyAccountQuota(context.Background(), p, deps, result)
+}
+
 type quantizedBillingRepoStub struct {
 	UsageBillingRepository
 

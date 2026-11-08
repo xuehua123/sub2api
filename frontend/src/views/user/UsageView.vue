@@ -1228,6 +1228,27 @@ const escapeCSVValue = (value: unknown): string => {
   return str
 }
 
+const EXPORT_PAGE_SIZE = 1000
+const EXPORT_RATE_LIMIT_MAX_RETRIES = 3
+const EXPORT_RATE_LIMIT_MAX_WAIT_SECONDS = 60
+
+// 导出逐页请求计入按用户的重查询限流；429 时按 Retry-After 等待后重试同一页。
+const queryExportPage = async (params: UsageQueryParams) => {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await usageAPI.query(params)
+    } catch (error: any) {
+      if (error?.status !== 429 || attempt >= EXPORT_RATE_LIMIT_MAX_RETRIES) throw error
+      const waitSeconds = Math.min(
+        Math.max(error.retry_after_seconds ?? EXPORT_RATE_LIMIT_MAX_WAIT_SECONDS, 1),
+        EXPORT_RATE_LIMIT_MAX_WAIT_SECONDS
+      )
+      appStore.showInfo(t('usage.exportRateLimited', { seconds: waitSeconds }))
+      await new Promise((resolve) => setTimeout(resolve, waitSeconds * 1000))
+    }
+  }
+}
+
 const exportToCSV = async () => {
   if (pagination.total === 0) {
     appStore.showWarning(t('usage.noDataToExport'))
@@ -1239,11 +1260,10 @@ const exportToCSV = async () => {
 
   try {
     const allLogs: UsageLog[] = []
-    const pageSize = 100
-    const exportParams = buildUsageQueryParams(1, pageSize)
-    const totalPages = Math.ceil(pagination.total / pageSize)
+    const exportParams = buildUsageQueryParams(1, EXPORT_PAGE_SIZE)
+    const totalPages = Math.ceil(pagination.total / EXPORT_PAGE_SIZE)
     for (let page = 1; page <= totalPages; page++) {
-      const response = await usageAPI.query({ ...exportParams, page })
+      const response = await queryExportPage({ ...exportParams, page })
       allLogs.push(...response.items)
     }
 
@@ -1258,18 +1278,20 @@ const exportToCSV = async () => {
       'Model',
       'Reasoning Effort',
       'Inbound Endpoint',
+      'IP Address',
       'Type',
       'Billing Mode',
       'Input Tokens',
       'Output Tokens',
       'Cache Read Tokens',
       'Cache Creation Tokens',
-      'Cost',
+      'Rate Multiplier',
+      'Billed Cost',
+      'Original Cost',
       'First Response (ms)',
       'First Event (ms)',
       'First Token (ms)',
-      'Duration (ms)',
-      'IP Address'
+      'Duration (ms)'
     ]
     const rows = allLogs.map((log) =>
       [
@@ -1278,18 +1300,20 @@ const exportToCSV = async () => {
         log.model,
         formatReasoningEffort(log.reasoning_effort),
         log.inbound_endpoint || '',
+        log.ip_address || '',
         getRequestTypeExportText(log),
         getBillingModeLabel(getDisplayBillingMode(log), t),
         log.input_tokens,
         log.output_tokens,
         log.cache_read_tokens,
         log.cache_creation_tokens,
+        log.rate_multiplier,
         log.actual_cost.toFixed(8),
+        log.total_cost.toFixed(8),
         log.first_client_flush_ms ?? '',
         log.first_sse_event_ms ?? '',
         log.first_token_ms ?? '',
-        log.duration_ms,
-        log.ip_address || ''
+        log.duration_ms
       ].map(escapeCSVValue)
     )
 

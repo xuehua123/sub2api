@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"net/http"
 	"strings"
@@ -36,6 +37,9 @@ func NormalizeCompactionTriggerInputOrder(body []byte) ([]byte, bool, error) {
 	if len(body) == 0 {
 		return body, false, nil
 	}
+	if !compactionTriggerNeedsDecode(body) {
+		return body, false, nil
+	}
 	var payload map[string]any
 	if err := decodeOpenAIJSONUseNumber(body, &payload); err != nil {
 		return body, false, err
@@ -69,6 +73,18 @@ func NormalizeCompactionTriggerInputOrder(body []byte) ([]byte, bool, error) {
 		return body, false, err
 	}
 	return encoded, true, nil
+}
+
+// compactionTriggerNeedsDecode lets bodies that cannot hold a trigger skip the
+// full decode: the type string appears literally unless a \u escape spells it.
+// Such a body must still be a valid JSON object, so decode errors keep
+// surfacing from the original path.
+func compactionTriggerNeedsDecode(body []byte) bool {
+	if bytes.Contains(body, []byte("compaction_trigger")) || bytes.Contains(body, []byte(`\u`)) {
+		return true
+	}
+	trimmed := bytes.TrimLeft(body, " \t\r\n")
+	return len(trimmed) == 0 || trimmed[0] != '{' || !gjson.ValidBytes(body)
 }
 
 // IsOpenAINativeCompactionV2 reports whether the handler recognized the
