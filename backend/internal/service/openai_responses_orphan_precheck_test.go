@@ -1,6 +1,8 @@
 package service
 
 import (
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
 
@@ -128,6 +130,21 @@ func TestOpenAIResponsesOrphanPrecheckCompatibilityErrors(t *testing.T) {
 func TestOpenAIResponsesOrphanPrecheckLargeEscapedContent(t *testing.T) {
 	body := []byte(`{"vendor":"` + strings.Repeat(`\n\"`, 1<<16) + `","input":[{"content":"` + strings.Repeat(`\n\"`, 1<<16) + `","type":"message"}]}`)
 	require.False(t, openAIResponsesInputMayNeedOrphanCleanup(body))
+
+	// AllocsPerRun reads process-wide runtime counters. Isolate its zero-allocation
+	// assertion so background workers left by unrelated service tests cannot add
+	// allocations between the counter snapshots.
+	const probeEnv = "SUB2API_OPENAI_RESPONSES_ALLOC_PROBE"
+	if os.Getenv(probeEnv) != "1" {
+		executable, err := os.Executable()
+		require.NoError(t, err)
+		cmd := exec.Command(executable, "-test.run=^TestOpenAIResponsesOrphanPrecheckLargeEscapedContent$")
+		cmd.Env = append(os.Environ(), probeEnv+"=1")
+		output, err := cmd.CombinedOutput()
+		require.NoError(t, err, "isolated allocation probe failed: %s", output)
+		return
+	}
+
 	allocations := testing.AllocsPerRun(5, func() {
 		if openAIResponsesInputMayNeedOrphanCleanup(body) {
 			panic("unexpected cleanup candidate")
