@@ -264,7 +264,7 @@ test("local preview links join both portals and all document assets are present"
   }
 });
 
-test("CCSwitch is recommended, with explicit restart and image-derived diagnostics", async () => {
+test("CCSwitch is recommended, with model refresh, Terra settings, and explicit restart", async () => {
   const app = loadPortal("docs-portal", {
     url: "https://doc.psydo.top/#guide/ccswitch",
   });
@@ -273,6 +273,11 @@ test("CCSwitch is recommended, with explicit restart and image-derived diagnosti
     assert.match(body, /保存并启用 → 完全退出 → 重新打开/);
     assert.match(body, /只关对话、新建任务或只重启 CCSwitch/);
     assert.match(body, /VS Code/);
+    assert.match(body, /获取模型列表/);
+    assert.match(body, /gpt-5\.6-sol/);
+    assert.match(body, /删除列表中残留的/);
+    assert.match(body, /gpt-6\.1-terra/);
+    assert.match(body, /config\.toml/);
     const recommended = app.document.querySelector(
       '#navigation a[data-page="guide/ccswitch"]',
     );
@@ -374,13 +379,14 @@ test("API examples and copied commands explicitly include User-Agent", async () 
   }
 });
 
-test("CCSwitch one-click import tutorial shows diagrams and opens console links separately", () => {
+test("CCSwitch tutorial uses self-drawn diagrams and opens console links separately", () => {
   const app = loadPortal("docs-portal", {
     url: "https://doc.psydo.top/#guide/ccswitch",
   });
   try {
     const body = app.document.querySelector("#article");
-    assert.match(body.textContent, /导入到 CCS/);
+    assert.match(body.textContent, /编辑/);
+    assert.match(body.textContent, /获取模型列表/);
     assert.ok(
       body.querySelector(
         'a[href="https://github.com/farion1231/cc-switch/releases"]',
@@ -389,8 +395,9 @@ test("CCSwitch one-click import tutorial shows diagrams and opens console links 
     const visibleImages = [...body.querySelectorAll("img")].filter(
       (img) => !img.closest("details"),
     );
-    assert.ok(visibleImages.length >= 2);
-    for (const image of visibleImages)
+    assert.equal(visibleImages.length, 2);
+    for (const image of visibleImages) {
+      assert.match(image.getAttribute("src"), /model-selection\.svg|terra-settings\.svg/);
       assert.ok(
         fs.existsSync(
           path.resolve(
@@ -400,6 +407,9 @@ test("CCSwitch one-click import tutorial shows diagrams and opens console links 
           ),
         ),
       );
+    }
+    assert.equal(body.querySelector('img[src$="pipixia-provider.webp"]'), null);
+    assert.equal(body.querySelector('img[src$="pipixia-provider-original.png"]'), null);
     for (const link of app.document.querySelectorAll("[data-console-path]")) {
       assert.equal(link.target, "_blank");
       assert.equal(link.rel, "noopener noreferrer");
@@ -439,11 +449,11 @@ test("review fixes keep article metadata and contextual console destinations acc
     assert.equal(app.document.activeElement.id, "menu-toggle");
     app.window.location.hash = "#guide/ccswitch";
     await settle();
-    const shot = app.document.querySelector(
-      'img[src$="pipixia-provider.webp"]',
+    const modelDiagram = app.document.querySelector(
+      'img[src$="model-selection.svg"]',
     );
-    assert.equal(shot.getAttribute("width"), "1966");
-    assert.equal(shot.getAttribute("height"), "610");
+    assert.equal(modelDiagram.getAttribute("width"), "1100");
+    assert.equal(modelDiagram.getAttribute("height"), "620");
     assert.deepEqual(app.errors, []);
   } finally {
     app.dom.window.close();

@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="560" viewBox="0 0 1100 560" role="img" aria-labelledby="title desc">
+  <title id="title">CCSwitch Terra 模型设置示意</title>
+  <desc id="desc">默认模型使用 gpt-5.6-sol，子代理和自动审批相关模型使用 gpt-6.1-terra。</desc>
+  <rect width="1100" height="560" rx="22" fill="#17181d"/>
+  <rect x="28" y="26" width="1044" height="508" rx="18" fill="#28292f" stroke="#4b4d56"/>
+  <text x="64" y="78" fill="#f4f5f7" font-size="28" font-family="Arial, Microsoft YaHei, sans-serif" font-weight="700">Codex 配置 · 示例</text>
+  <text x="64" y="110" fill="#b5b8c2" font-size="16" font-family="Arial, Microsoft YaHei, sans-serif">按当前 CCSwitch 字段名称填写；不同版本可能把自动审批放在高级设置中。</text>
+  <g font-family="Arial, Microsoft YaHei, sans-serif" font-size="18">
+    <text x="72" y="166" fill="#c8cbd3">默认模型</text>
+    <rect x="270" y="134" width="730" height="52" rx="9" fill="#1f2025" stroke="#6b6e7a"/>
+    <text x="296" y="168" fill="#f4f5f7">gpt-5.6-sol</text>
+    <text x="72" y="244" fill="#c8cbd3">子代理模型</text>
+    <rect x="270" y="212" width="730" height="52" rx="9" fill="#203b36" stroke="#ef7b2d"/>
+    <text x="296" y="246" fill="#f4f5f7">gpt-6.1-terra</text>
+    <text x="72" y="322" fill="#c8cbd3">自动审批模型</text>
+    <rect x="270" y="290" width="730" height="52" rx="9" fill="#203b36" stroke="#ef7b2d"/>
+    <text x="296" y="324" fill="#f4f5f7">gpt-6.1-terra</text>
+    <text x="72" y="400" fill="#c8cbd3">协议</text>
+    <rect x="270" y="368" width="730" height="52" rx="9" fill="#1f2025" stroke="#6b6e7a"/>
+    <text x="296" y="402" fill="#f4f5f7">Responses</text>
+    <rect x="850" y="450" width="150" height="44" rx="9" fill="#ef7b2d"/>
+    <text x="894" y="478" fill="#fff" font-size="18" font-weight="700">保存</text>
+  </g>
+</svg>

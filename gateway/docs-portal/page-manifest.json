@@ -37,7 +37,7 @@
     "navTitle": "CCSwitch · 推荐",
     "group": "工具接入",
     "path": "guides/ccswitch/",
-    "description": "安装 CCSwitch → API 密钥页面一键导入 → 启用 → 完全退出并重开 → 验证。"
+    "description": "更新 CCSwitch → 编辑现有供应商 → 刷新模型列表 → 设置最新 Terra → 完全退出并重开。"
   },
   {
     "id": "guide/codex",
