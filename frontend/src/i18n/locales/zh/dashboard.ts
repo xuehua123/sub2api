@@ -755,6 +755,7 @@ export default {
 	  cacheWrite5mPrice: '缓存写入（5 分钟）',
 	  cacheWrite1hPrice: '缓存写入（1 小时）',
 	  accountLongContextRequired: '（需账号开启长上下文计费）',
+      cacheWrite12hPrice: '缓存写入（12h）',
       cacheReadPrice: '缓存读取',
       imageInputPrice: '图片输入',
       imageOutputPrice: '图片输出',

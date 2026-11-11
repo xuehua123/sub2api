@@ -76,6 +76,7 @@ type userSupportedModelPricing struct {
 	CacheWritePrice            *float64                 `json:"cache_write_price"`
 	CacheWrite5mPrice          *float64                 `json:"cache_write_5m_price,omitempty"`
 	CacheWrite1hPrice          *float64                 `json:"cache_write_1h_price,omitempty"`
+	CacheWrite12hPrice         *float64                 `json:"cache_write_12h_price"`
 	CacheReadPrice             *float64                 `json:"cache_read_price"`
 	ReasoningEffortMultipliers map[string]float64       `json:"reasoning_effort_multipliers,omitempty"`
 	ImageInputPrice            *float64                 `json:"image_input_price"`
@@ -95,6 +96,7 @@ type userPricingIntervalDTO struct {
 	CacheWritePrice            *float64 `json:"cache_write_price"`
 	CacheWrite5mPrice          *float64 `json:"cache_write_5m_price,omitempty"`
 	CacheWrite1hPrice          *float64 `json:"cache_write_1h_price,omitempty"`
+	CacheWrite12hPrice         *float64 `json:"cache_write_12h_price"`
 	CacheReadPrice             *float64 `json:"cache_read_price"`
 	PerRequestPrice            *float64 `json:"per_request_price"`
 	InputMultiplier            *float64 `json:"input_multiplier"`
@@ -346,6 +348,7 @@ func toUserPricingIntervals(src []service.PricingInterval) []userPricingInterval
 			CacheWritePrice:            iv.CacheWritePrice,
 			CacheWrite5mPrice:          iv.CacheWrite5mPrice,
 			CacheWrite1hPrice:          iv.CacheWrite1hPrice,
+			CacheWrite12hPrice:         iv.CacheWrite12hPrice,
 			CacheReadPrice:             iv.CacheReadPrice,
 			PerRequestPrice:            iv.PerRequestPrice,
 			InputMultiplier:            iv.InputMultiplier,
@@ -378,6 +381,7 @@ func toUserPricing(p *service.ChannelModelPricing) *userSupportedModelPricing {
 		CacheWritePrice:            p.CacheWritePrice,
 		CacheWrite5mPrice:          p.CacheWrite5mPrice,
 		CacheWrite1hPrice:          p.CacheWrite1hPrice,
+		CacheWrite12hPrice:         p.CacheWrite12hPrice,
 		CacheReadPrice:             p.CacheReadPrice,
 		ReasoningEffortMultipliers: p.ReasoningEffortMultipliers,
 		ImageInputPrice:            p.ImageInputPrice,

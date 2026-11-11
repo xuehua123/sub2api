@@ -501,6 +501,7 @@ describe('admin GroupsView column settings', () => {
             input_price: 0.000002,
             output_price: 0.00001,
             cache_write_price: 0.000003,
+            cache_write_12h_price: null,
             cache_read_price: 0.0000005,
             image_input_price: null,
             image_output_price: null,
@@ -522,6 +523,7 @@ describe('admin GroupsView column settings', () => {
       input_price: 0.000002,
       output_price: 0.00001,
       cache_write_price: 0.000003,
+      cache_write_12h_price: 0.000006,
       cache_read_price: 0.0000005,
       image_input_price: null,
       image_output_price: null,
@@ -546,6 +548,7 @@ describe('admin GroupsView column settings', () => {
       input_price: 2,
       output_price: 10,
       cache_write_price: 3,
+      cache_write_12h_price: 6,
       cache_read_price: 0.5,
     })
 

@@ -114,8 +114,11 @@ const DataTableStub = defineComponent({
   props: {
     columns: { type: Array, default: () => [] },
     data: { type: Array, default: () => [] },
+    selectedKeys: Array,
+    selectable: Boolean,
+    loading: Boolean,
   },
-  emits: ['sort'],
+  emits: ['sort', 'update:selectedKeys'],
   template: `
     <div>
       <div data-test="columns">{{ columns.map((col) => col.key).join(',') }}</div>
@@ -134,7 +137,13 @@ const DataTableStub = defineComponent({
         <div data-test="current-concurrency">
           <slot name="cell-current_concurrency" :value="row.current_concurrency" :row="row" />
         </div>
-        <div v-if="columns.some((col) => col.key === 'last_used_ip')" data-test="last-used-ip">
+        <div data-test="usage">
+          <slot name="cell-usage" :row="row" />
+        </div>
+        <div
+          v-if="columns.some((col) => col.key === 'last_used_ip')"
+          data-test="last-used-ip"
+        >
           <slot name="cell-last_used_ip" :value="row.last_used_ip" :row="row" />
         </div>
       </div>
@@ -285,7 +294,8 @@ function keyFixture(overrides: Partial<ApiKey> = {}): ApiKey {
 
 async function mountView(
   groups: AvailableGroup[] = [baseGroup({ id: 10, name: 'Standard' })],
-  keys: ApiKey[] = []
+  keys: ApiKey[] = [],
+  configureMocks?: () => void,
 ) {
   apiMocks.list.mockResolvedValue({ items: keys, total: keys.length, page: 1, page_size: 10, pages: keys.length > 0 ? 1 : 0 })
   apiMocks.createWithPayload.mockResolvedValue(keyFixture())
@@ -294,6 +304,8 @@ async function mountView(
   apiMocks.getUserGroupRates.mockResolvedValue({})
   apiMocks.getDashboardApiKeysUsage.mockResolvedValue({ stats: {} })
   apiMocks.getPublicSettings.mockResolvedValue({})
+
+  configureMocks?.()
 
   const wrapper = mount(KeysView, {
     global: {
@@ -833,5 +845,128 @@ describe('KeysView column settings', () => {
       },
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     )
+  })
+
+  describe('create provider selection', () => {
+    const platforms = ['anthropic', 'openai', 'kimi', 'zhipu', 'deepseek', 'minimax', 'gemini', 'grok', 'antigravity', 'composite', 'opencode_go', 'typesafe']
+    const availableGroups = platforms.map((platform, index) => baseGroup({
+      id: index + 1,
+      // Deliberately ambiguous names: classification must follow the platform.
+      name: `Shared group ${index + 1}`,
+      platform,
+      rate_multiplier: 1,
+      subscription_type: 'standard',
+    }))
+    const groupSelect = (wrapper: VueWrapper) => wrapper.findComponent('[data-tour="key-form-group"]')
+    const optionIds = (wrapper: VueWrapper) => groupSelect(wrapper).props('options').map((option: { value: number }) => option.value)
+    const chooseProvider = (wrapper: VueWrapper, value: string) => wrapper.get(`input[name="key-provider"][value="${value}"]`).setValue()
+    const openCreate = async (groups = availableGroups, configureMocks?: () => void) => {
+      const wrapper = await mountView(groups, [keyFixture()], configureMocks)
+      await wrapper.get('[data-tour="keys-create-btn"]').trigger('click')
+      return wrapper
+    }
+
+    it('classifies all configured platforms and retains the complete table filter', async () => {
+      const wrapper = await openCreate()
+      expect(wrapper.findAll('input[name="key-provider"]')).toHaveLength(4)
+      expect(optionIds(wrapper)).toEqual([1])
+      await chooseProvider(wrapper, 'openai')
+      expect(optionIds(wrapper)).toEqual([2])
+      await chooseProvider(wrapper, 'domestic')
+      expect(optionIds(wrapper)).toEqual([3, 4, 5, 6])
+      await chooseProvider(wrapper, 'other')
+      expect(optionIds(wrapper).sort((a: number, b: number) => a - b)).toEqual([7, 8, 9, 10, 11, 12])
+      expect(wrapper.findAllComponents(SelectStub)[0].props('options')).toHaveLength(14)
+    })
+
+    it('clears the previous group on provider change and submits only the newly selected group', async () => {
+      const wrapper = await openCreate()
+      await wrapper.get('[data-tour="key-form-name"]').setValue('My key')
+      await groupSelect(wrapper).vm.$emit('update:modelValue', 1)
+      await chooseProvider(wrapper, 'domestic')
+      expect(groupSelect(wrapper).props('modelValue')).toBeNull()
+      await wrapper.get('#key-form').trigger('submit')
+      expect(apiMocks.createWithPayload).not.toHaveBeenCalled()
+      expect(storeMocks.showError).toHaveBeenCalledWith('keys.groupRequired')
+
+      await groupSelect(wrapper).vm.$emit('update:modelValue', 5)
+      vi.mocked(apiMocks.createWithPayload).mockResolvedValue({ ...keyFixture(), group_id: 5 })
+      await wrapper.get('#key-form').trigger('submit')
+      await flushPromises()
+      expect(apiMocks.createWithPayload).toHaveBeenCalledOnce()
+      expect(apiMocks.createWithPayload).toHaveBeenCalledWith(expect.objectContaining({ name: 'My key', group_id: 5, access_source: 'balance' }))
+    })
+
+    it('defaults to a provider with available groups and disables empty categories', async () => {
+      const wrapper = await openCreate([availableGroups[5]])
+      expect(wrapper.get<HTMLInputElement>('input[value="domestic"]').element.checked).toBe(true)
+      expect(wrapper.get<HTMLInputElement>('input[value="anthropic"]').element.disabled).toBe(true)
+      expect(optionIds(wrapper)).toEqual([6])
+    })
+
+    it('shows the empty state when no groups are available', async () => {
+      const wrapper = await openCreate([])
+      expect(wrapper.get('[data-tour="key-form-provider"]').text()).toContain('common.noGroupsAvailable')
+      expect(optionIds(wrapper)).toEqual([])
+      expect(wrapper.findAll<HTMLInputElement>('input[name="key-provider"]').every((input) => input.element.disabled)).toBe(true)
+    })
+
+    it('selects an available provider when groups arrive after opening', async () => {
+      let resolveGroups!: (value: typeof availableGroups) => void
+      const wrapper = await openCreate([], () => {
+        apiMocks.getAvailable.mockReturnValue(new Promise((resolve) => { resolveGroups = resolve }))
+      })
+      resolveGroups([availableGroups[1]])
+      await flushPromises()
+      expect(wrapper.get<HTMLInputElement>('input[value="openai"]').element.checked).toBe(true)
+      expect(optionIds(wrapper)).toEqual([2])
+    })
+
+    it('resets provider and group when reopening create, and preserves edit options', async () => {
+      const wrapper = await openCreate()
+      await chooseProvider(wrapper, 'domestic')
+      await groupSelect(wrapper).vm.$emit('update:modelValue', 5)
+      await wrapper.findComponent(BaseDialogStub).vm.$emit('close')
+      await wrapper.get('[data-tour="keys-create-btn"]').trigger('click')
+      expect(optionIds(wrapper)).toEqual([1])
+      expect(groupSelect(wrapper).props('modelValue')).toBeNull()
+      await wrapper.findComponent(BaseDialogStub).vm.$emit('close')
+      setupState(wrapper).editKey(keyFixture())
+      await nextTick()
+      expect(wrapper.find('[data-tour="key-form-provider"]').exists()).toBe(false)
+      expect(optionIds(wrapper)).toHaveLength(12)
+    })
+  })
+
+  describe('usage stats loading', () => {
+    it('renders the key list without waiting for slow usage stats', async () => {
+      let resolveUsage!: (value: { stats: Record<string, unknown> }) => void
+      const wrapper = await mountView(undefined, [keyFixture()], () => {
+        apiMocks.getDashboardApiKeysUsage.mockReturnValue(new Promise((resolve) => { resolveUsage = resolve }))
+      })
+
+      const table = wrapper.findComponent({ name: 'DataTable' })
+      expect(table.props('loading')).toBe(false)
+      expect(table.props('data')).toHaveLength(1)
+      expect(wrapper.find('[data-test="usage-pending"]').exists()).toBe(true)
+
+      resolveUsage({
+        stats: { 1: { api_key_id: 1, today_actual_cost: 0.5, total_actual_cost: 12.25 } },
+      })
+      await flushPromises()
+      expect(wrapper.find('[data-test="usage-pending"]').exists()).toBe(false)
+      expect(wrapper.get('[data-test="usage"]').text()).toContain('$12.2500')
+    })
+
+    it('stops showing usage placeholders when the usage request fails', async () => {
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const wrapper = await mountView(undefined, [keyFixture()], () => {
+        apiMocks.getDashboardApiKeysUsage.mockRejectedValue(new Error('timeout'))
+      })
+
+      expect(wrapper.find('[data-test="usage-pending"]').exists()).toBe(false)
+      expect(wrapper.get('[data-test="usage"]').text()).toContain('$0.0000')
+      consoleError.mockRestore()
+    })
   })
 })
