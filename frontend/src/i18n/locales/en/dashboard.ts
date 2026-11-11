@@ -750,6 +750,7 @@ export default {
 	  cacheWrite5mPrice: 'Cache Write (5m)',
 	  cacheWrite1hPrice: 'Cache Write (1h)',
 	  accountLongContextRequired: ' (requires account long-context billing)',
+      cacheWrite12hPrice: 'Cache Write (12h)',
       cacheReadPrice: 'Cache Read',
       imageInputPrice: 'Image Input',
       imageOutputPrice: 'Image Output',

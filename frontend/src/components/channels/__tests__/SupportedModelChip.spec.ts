@@ -95,6 +95,27 @@ describe('SupportedModelChip group pricing', () => {
     expect(wrapper.text()).toContain('availableChannels.pricing.unitPerSecond')
   })
 
+  it.each([0, 5e-6])('uses each group 12h price when the legacy card is absent (rate=%s)', async (rate) => {
+    const card = { ...pricing('token', 2e-6), cache_write_12h_price: rate }
+    const wrapper = mount(SupportedModelChip, {
+      props: {
+        model: { name: 'gpt-6-luna', platform: 'openai', pricing: null, pricing_by_group: { '1': card } },
+        groups: [groups[0]],
+      },
+      global: { stubs: {
+        Teleport: true,
+        PlatformIcon: true,
+        PricingRow: { props: ['label', 'value'], template: '<div>{{ label }}={{ value }}</div>' },
+      } },
+    })
+    try {
+      await wrapper.get('[tabindex="0"]').trigger('mouseenter')
+      expect(wrapper.text()).toContain(`availableChannels.pricing.cacheWrite12hPrice=${rate}`)
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
   it('falls back to the legacy channel price when pricing_by_group is absent', () => {
     const wrapper = mount(SupportedModelChip, {
       props: {

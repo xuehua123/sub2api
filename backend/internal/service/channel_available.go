@@ -272,6 +272,11 @@ func overlayTokenPricingForDisplay(base *ModelPricing, configured *ChannelModelP
 		pricing.CacheCreation1hPrice = *configured.CacheWrite1hPrice
 		pricing.SupportsCacheBreakdown = true
 	}
+	if configured.CacheWrite12hPrice != nil {
+		pricing.CacheCreation12hPricePerToken = cloneDisplayPrice(configured.CacheWrite12hPrice)
+	} else if configured.CacheWritePrice != nil {
+		pricing.CacheCreation12hPricePerToken = nil
+	}
 	if configured.CacheReadPrice != nil {
 		pricing.CacheReadPricePerToken = *configured.CacheReadPrice
 		pricing.CacheReadPricePerTokenPriority = *configured.CacheReadPrice
@@ -345,16 +350,17 @@ func (s *ChannelService) projectChannelIntervalsForGroup(model string, raw *Chan
 		runtimePricing = s.billingService.applyModelSpecificPricingPolicyEx(model, runtimePricing, false, time.Time{})
 		card := effectiveTokenPricingForDisplay(runtimePricing, true)
 		tier := PricingInterval{
-			MinTokens:         iv.MinTokens,
-			MaxTokens:         iv.MaxTokens,
-			TierLabel:         iv.TierLabel,
-			InputPrice:        card.InputPrice,
-			OutputPrice:       card.OutputPrice,
-			CacheWritePrice:   card.CacheWritePrice,
-			CacheWrite5mPrice: card.CacheWrite5mPrice,
-			CacheWrite1hPrice: card.CacheWrite1hPrice,
-			CacheReadPrice:    card.CacheReadPrice,
-			SortOrder:         i * 2,
+			MinTokens:          iv.MinTokens,
+			MaxTokens:          iv.MaxTokens,
+			TierLabel:          iv.TierLabel,
+			InputPrice:         card.InputPrice,
+			OutputPrice:        card.OutputPrice,
+			CacheWritePrice:    card.CacheWritePrice,
+			CacheWrite5mPrice:  card.CacheWrite5mPrice,
+			CacheWrite1hPrice:  card.CacheWrite1hPrice,
+			CacheWrite12hPrice: card.CacheWrite12hPrice,
+			CacheReadPrice:     card.CacheReadPrice,
+			SortOrder:          i * 2,
 		}
 		tiers = append(tiers, tier)
 		if hasFast {
@@ -441,6 +447,7 @@ func resolveGroupModelPricingForDisplay(
 			effective.CacheWritePrice = catalogCard.CacheWritePrice
 			effective.CacheWrite5mPrice = catalogCard.CacheWrite5mPrice
 			effective.CacheWrite1hPrice = catalogCard.CacheWrite1hPrice
+			effective.CacheWrite12hPrice = cloneDisplayPrice(catalogCard.CacheWrite12hPrice)
 			effective.CacheReadPrice = catalogCard.CacheReadPrice
 		}
 		if effective == nil {
@@ -484,13 +491,14 @@ func effectiveTokenPricingForDisplay(pricing *ModelPricing, channelSemantics boo
 		return nil
 	}
 	result := &ChannelModelPricing{
-		BillingMode:      BillingModeToken,
-		InputPrice:       floatPointerForDisplay(pricing.InputPricePerToken),
-		OutputPrice:      floatPointerForDisplay(pricing.OutputPricePerToken),
-		CacheWritePrice:  floatPointerForDisplay(pricing.CacheCreationPricePerToken),
-		CacheReadPrice:   floatPointerForDisplay(pricing.CacheReadPricePerToken),
-		ImageInputPrice:  floatPointerForDisplay(pricing.ImageInputPricePerToken),
-		ImageOutputPrice: nonZeroPtr(pricing.ImageOutputPricePerToken),
+		BillingMode:        BillingModeToken,
+		InputPrice:         floatPointerForDisplay(pricing.InputPricePerToken),
+		OutputPrice:        floatPointerForDisplay(pricing.OutputPricePerToken),
+		CacheWritePrice:    floatPointerForDisplay(pricing.CacheCreationPricePerToken),
+		CacheWrite12hPrice: cloneDisplayPrice(pricing.CacheCreation12hPricePerToken),
+		CacheReadPrice:     floatPointerForDisplay(pricing.CacheReadPricePerToken),
+		ImageInputPrice:    floatPointerForDisplay(pricing.ImageInputPricePerToken),
+		ImageOutputPrice:   nonZeroPtr(pricing.ImageOutputPricePerToken),
 	}
 	if pricing.ImageInputPricePerToken <= 0 {
 		result.ImageInputPrice = floatPointerForDisplay(pricing.InputPricePerToken)
@@ -559,14 +567,15 @@ func groupTokenIntervalsForDisplay(
 	}
 
 	baseTier := PricingInterval{
-		TierLabel:         "基础",
-		InputPrice:        cloneDisplayPrice(base.InputPrice),
-		OutputPrice:       cloneDisplayPrice(base.OutputPrice),
-		CacheWritePrice:   cloneDisplayPrice(base.CacheWritePrice),
-		CacheWrite5mPrice: cloneDisplayPrice(base.CacheWrite5mPrice),
-		CacheWrite1hPrice: cloneDisplayPrice(base.CacheWrite1hPrice),
-		CacheReadPrice:    cloneDisplayPrice(base.CacheReadPrice),
-		SortOrder:         0,
+		TierLabel:          "基础",
+		InputPrice:         cloneDisplayPrice(base.InputPrice),
+		OutputPrice:        cloneDisplayPrice(base.OutputPrice),
+		CacheWritePrice:    cloneDisplayPrice(base.CacheWritePrice),
+		CacheWrite5mPrice:  cloneDisplayPrice(base.CacheWrite5mPrice),
+		CacheWrite1hPrice:  cloneDisplayPrice(base.CacheWrite1hPrice),
+		CacheWrite12hPrice: cloneDisplayPrice(base.CacheWrite12hPrice),
+		CacheReadPrice:     cloneDisplayPrice(base.CacheReadPrice),
+		SortOrder:          0,
 	}
 	displayThreshold := runtimePricing.LongContextInputThreshold
 	if hasLong && runtimePricing.LongContextThresholdInclusive && displayThreshold > 0 {
@@ -673,13 +682,14 @@ func WithDirectAnthropicFastPricingForDisplay(anthropicRoute, fastEnabled bool, 
 	standard := projected.Intervals
 	if len(standard) == 0 {
 		standard = []PricingInterval{{
-			TierLabel:         "基础",
-			InputPrice:        cloneDisplayPrice(projected.InputPrice),
-			OutputPrice:       cloneDisplayPrice(projected.OutputPrice),
-			CacheWritePrice:   cloneDisplayPrice(projected.CacheWritePrice),
-			CacheWrite5mPrice: cloneDisplayPrice(projected.CacheWrite5mPrice),
-			CacheWrite1hPrice: cloneDisplayPrice(projected.CacheWrite1hPrice),
-			CacheReadPrice:    cloneDisplayPrice(projected.CacheReadPrice),
+			TierLabel:          "基础",
+			InputPrice:         cloneDisplayPrice(projected.InputPrice),
+			OutputPrice:        cloneDisplayPrice(projected.OutputPrice),
+			CacheWritePrice:    cloneDisplayPrice(projected.CacheWritePrice),
+			CacheWrite5mPrice:  cloneDisplayPrice(projected.CacheWrite5mPrice),
+			CacheWrite1hPrice:  cloneDisplayPrice(projected.CacheWrite1hPrice),
+			CacheWrite12hPrice: cloneDisplayPrice(projected.CacheWrite12hPrice),
+			CacheReadPrice:     cloneDisplayPrice(projected.CacheReadPrice),
 		}}
 	}
 
@@ -711,10 +721,11 @@ func WithDirectAnthropicFastPricingForDisplay(anthropicRoute, fastEnabled bool, 
 
 func groupRuntimeTokenPricingForDisplay(base, configured *ChannelModelPricing, pricing *LiteLLMModelPricing) *ModelPricing {
 	runtimePricing := &ModelPricing{
-		InputPricePerToken:         displayPriceValue(base.InputPrice),
-		OutputPricePerToken:        displayPriceValue(base.OutputPrice),
-		CacheCreationPricePerToken: displayPriceValue(base.CacheWritePrice),
-		CacheReadPricePerToken:     displayPriceValue(base.CacheReadPrice),
+		InputPricePerToken:            displayPriceValue(base.InputPrice),
+		OutputPricePerToken:           displayPriceValue(base.OutputPrice),
+		CacheCreationPricePerToken:    displayPriceValue(base.CacheWritePrice),
+		CacheCreation12hPricePerToken: cloneDisplayPrice(base.CacheWrite12hPrice),
+		CacheReadPricePerToken:        displayPriceValue(base.CacheReadPrice),
 	}
 	if pricing != nil {
 		cacheWrite5m, cacheWrite1h := liteLLMCacheBreakdownForDisplay(pricing)
@@ -765,6 +776,11 @@ func groupRuntimeTokenPricingForDisplay(base, configured *ChannelModelPricing, p
 			runtimePricing.CacheCreation1hPrice = *configured.CacheWrite1hPrice
 			runtimePricing.SupportsCacheBreakdown = true
 		}
+		if configured.CacheWrite12hPrice != nil {
+			runtimePricing.CacheCreation12hPricePerToken = cloneDisplayPrice(configured.CacheWrite12hPrice)
+		} else if configured.CacheWritePrice != nil {
+			runtimePricing.CacheCreation12hPricePerToken = nil
+		}
 		if configured.CacheReadPrice != nil {
 			runtimePricing.CacheReadPricePerTokenPriority = groupPriorityOverridePrice(
 				pricing, func(p *LiteLLMModelPricing) (float64, float64) {
@@ -781,6 +797,10 @@ func projectEffectiveCacheBreakdownForDisplay(effective *ChannelModelPricing, ru
 	}
 	effective.CacheWrite5mPrice = nil
 	effective.CacheWrite1hPrice = nil
+	effective.CacheWrite12hPrice = nil
+	if runtimePricing != nil {
+		effective.CacheWrite12hPrice = cloneDisplayPrice(runtimePricing.CacheCreation12hPricePerToken)
+	}
 	if runtimePricing == nil || !runtimePricing.SupportsCacheBreakdown ||
 		(runtimePricing.CacheCreation5mPrice <= 0 && runtimePricing.CacheCreation1hPrice <= 0) {
 		return
@@ -809,15 +829,16 @@ func longContextDisplayTier(base PricingInterval, pricing *ModelPricing, display
 		cacheReadMultiplier = inputMultiplier
 	}
 	return PricingInterval{
-		MinTokens:         displayThreshold,
-		TierLabel:         label,
-		InputPrice:        multiplyDisplayPrice(base.InputPrice, inputMultiplier),
-		OutputPrice:       multiplyDisplayPrice(base.OutputPrice, outputMultiplier),
-		CacheWritePrice:   multiplyDisplayPrice(base.CacheWritePrice, inputMultiplier),
-		CacheWrite5mPrice: multiplyDisplayPrice(base.CacheWrite5mPrice, inputMultiplier),
-		CacheWrite1hPrice: multiplyDisplayPrice(base.CacheWrite1hPrice, inputMultiplier),
-		CacheReadPrice:    multiplyDisplayPrice(base.CacheReadPrice, cacheReadMultiplier),
-		SortOrder:         sortOrder,
+		MinTokens:          displayThreshold,
+		TierLabel:          label,
+		InputPrice:         multiplyDisplayPrice(base.InputPrice, inputMultiplier),
+		OutputPrice:        multiplyDisplayPrice(base.OutputPrice, outputMultiplier),
+		CacheWritePrice:    multiplyDisplayPrice(base.CacheWritePrice, inputMultiplier),
+		CacheWrite5mPrice:  multiplyDisplayPrice(base.CacheWrite5mPrice, inputMultiplier),
+		CacheWrite1hPrice:  multiplyDisplayPrice(base.CacheWrite1hPrice, inputMultiplier),
+		CacheWrite12hPrice: multiplyDisplayPrice(base.CacheWrite12hPrice, inputMultiplier),
+		CacheReadPrice:     multiplyDisplayPrice(base.CacheReadPrice, cacheReadMultiplier),
+		SortOrder:          sortOrder,
 	}
 }
 
@@ -836,6 +857,14 @@ func fastDisplayTier(model string, base PricingInterval, pricing *ModelPricing, 
 			tier.CacheWrite5mPrice = cloneDisplayPrice(base.CacheWrite5mPrice)
 			tier.CacheWrite1hPrice = cloneDisplayPrice(base.CacheWrite1hPrice)
 		}
+		// Match computeTokenBreakdown's priority scaling of the separate 12h rate.
+		cacheWriteRatio := configuredServiceTierMultiplier("priority", pricing)
+		if pricing.CacheCreationPricePerToken > 0 {
+			cacheWriteRatio = displayPriceValue(tier.CacheWritePrice) / pricing.CacheCreationPricePerToken
+		} else if pricing.InputPricePerToken > 0 {
+			cacheWriteRatio = displayPriceValue(tier.InputPrice) / pricing.InputPricePerToken
+		}
+		tier.CacheWrite12hPrice = multiplyDisplayPrice(base.CacheWrite12hPrice, cacheWriteRatio)
 		tier.CacheReadPrice = priorityOrStandardDisplayPrice(pricing.CacheReadPricePerTokenPriority, base.CacheReadPrice)
 		return tier
 	}
@@ -862,6 +891,7 @@ func multipliedFastDisplayTier(tier, base PricingInterval, multiplier float64) P
 	tier.CacheWritePrice = multiplyDisplayPrice(base.CacheWritePrice, multiplier)
 	tier.CacheWrite5mPrice = multiplyDisplayPrice(base.CacheWrite5mPrice, multiplier)
 	tier.CacheWrite1hPrice = multiplyDisplayPrice(base.CacheWrite1hPrice, multiplier)
+	tier.CacheWrite12hPrice = multiplyDisplayPrice(base.CacheWrite12hPrice, multiplier)
 	tier.CacheReadPrice = multiplyDisplayPrice(base.CacheReadPrice, multiplier)
 	return tier
 }
@@ -925,6 +955,11 @@ func overlayConfiguredPrices(dst, configured *ChannelModelPricing) {
 		}
 	} else if configured.CacheWrite1hPrice != nil && dst.CacheWrite1hPrice != nil {
 		dst.CacheWrite1hPrice = cloneDisplayPrice(configured.CacheWrite1hPrice)
+	}
+	if configured.CacheWrite12hPrice != nil {
+		dst.CacheWrite12hPrice = cloneDisplayPrice(configured.CacheWrite12hPrice)
+	} else if configured.CacheWritePrice != nil {
+		dst.CacheWrite12hPrice = nil
 	}
 	if configured.CacheReadPrice != nil {
 		dst.CacheReadPrice = configured.CacheReadPrice
@@ -1029,13 +1064,13 @@ func pricingNeedsFallback(p *ChannelModelPricing) bool {
 		return true
 	}
 	if p.InputPrice != nil || p.OutputPrice != nil ||
-		p.CacheWritePrice != nil || p.CacheWrite1hPrice != nil || p.CacheReadPrice != nil ||
+		p.CacheWritePrice != nil || p.CacheWrite1hPrice != nil || p.CacheWrite12hPrice != nil || p.CacheReadPrice != nil ||
 		p.ImageInputPrice != nil || p.ImageOutputPrice != nil || p.PerRequestPrice != nil {
 		return false
 	}
 	for _, iv := range p.Intervals {
 		if iv.InputPrice != nil || iv.OutputPrice != nil ||
-			iv.CacheWritePrice != nil || iv.CacheWrite1hPrice != nil || iv.CacheReadPrice != nil ||
+			iv.CacheWritePrice != nil || iv.CacheWrite1hPrice != nil || iv.CacheWrite12hPrice != nil || iv.CacheReadPrice != nil ||
 			iv.PerRequestPrice != nil {
 			return false
 		}
