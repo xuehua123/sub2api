@@ -616,3 +616,19 @@ func TestReleaseUsageBillingBatchImageBalance_SkipsWhenHoldNeverReserved(t *test
 	require.NoError(t, tx.Commit())
 	require.NoError(t, mock.ExpectationsWereMet())
 }
+
+func TestUsageBillingRepositoryApplyBatch_RejectsEntitlementBeforeTransaction(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+	repo := NewUsageBillingRepository(nil, db)
+	entitlementID := int64(7)
+	outcomes, err := repo.ApplyBatch(context.Background(), []*service.UsageBillingCommand{
+		{RequestID: "ordinary", UserID: 1, BalanceCost: 1},
+		{RequestID: "entitlement", UserID: 1, EntitlementID: &entitlementID, SubscriptionCost: 2},
+	})
+	require.ErrorIs(t, err, errUsageBillingBatchEntitlement)
+	require.Nil(t, outcomes)
+	// 无 Begin 期望：混入权益时整批必须在发生任何结算之前退回单条路径。
+	require.NoError(t, mock.ExpectationsWereMet())
+}

@@ -14,7 +14,7 @@ import (
 	"github.com/dgraph-io/ristretto"
 )
 
-const apiKeyAuthSnapshotVersion = 28 // v28: combine upstream require_privacy_set with fork image_count_billing group state
+const apiKeyAuthSnapshotVersion = 29 // v29: invalidate snapshots for force_openai_ultrafast and image_count_billing
 
 func cloneChannelModelPricing(pricing []ChannelModelPricing) []ChannelModelPricing {
 	if pricing == nil {
@@ -439,6 +439,7 @@ func (s *APIKeyService) snapshotFromAPIKey(ctx context.Context, apiKey *APIKey) 
 			AllowMessagesDispatch:           apiKey.Group.AllowMessagesDispatch,
 			AllowLive:                       apiKey.Group.AllowLive,
 			ForceOpenAIFast:                 apiKey.Group.ForceOpenAIFast,
+			ForceOpenAIUltrafast:            apiKey.Group.ForceOpenAIUltrafast,
 			FreeOpenAIFast:                  apiKey.Group.FreeOpenAIFast,
 			DefaultMappedModel:              apiKey.Group.DefaultMappedModel,
 			MessagesDispatchModelConfig:     apiKey.Group.MessagesDispatchModelConfig,
@@ -551,6 +552,7 @@ func (s *APIKeyService) snapshotToAPIKey(key string, snapshot *APIKeyAuthSnapsho
 			AllowMessagesDispatch:           snapshot.Group.AllowMessagesDispatch,
 			AllowLive:                       snapshot.Group.AllowLive,
 			ForceOpenAIFast:                 snapshot.Group.ForceOpenAIFast,
+			ForceOpenAIUltrafast:            snapshot.Group.ForceOpenAIUltrafast,
 			FreeOpenAIFast:                  snapshot.Group.FreeOpenAIFast,
 			DefaultMappedModel:              snapshot.Group.DefaultMappedModel,
 			MessagesDispatchModelConfig:     snapshot.Group.MessagesDispatchModelConfig,
