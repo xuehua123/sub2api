@@ -1242,15 +1242,19 @@ func TestBuildGroupConfiguredCodexModelsManifestUsesAdministratorConfiguration(t
 	require.NoError(t, err)
 	require.True(t, configured)
 	models := decodeCodexManifestModels(t, manifest.Body)
-	require.Len(t, models, 15)
-	var solFound, terraFound bool
+	require.Len(t, models, 17)
+	var solFound, terraFound, sol62Found, astra62Found bool
 	for _, model := range models {
 		solFound = solFound || model["slug"] == "gpt-6.1-sol"
 		terraFound = terraFound || model["slug"] == "gpt-6.1-terra"
+		sol62Found = sol62Found || model["slug"] == "gpt-6.2-sol"
+		astra62Found = astra62Found || model["slug"] == "gpt-6.2-astra"
 		require.NotEqual(t, "gpt-5.5", model["slug"], "OAuth retirement applies when API key accounts do not serve this model")
 	}
 	require.True(t, solFound)
 	require.True(t, terraFound)
+	require.True(t, sol62Found)
+	require.True(t, astra62Found)
 	var glm map[string]any
 	for _, model := range models {
 		if model["slug"] == "glm-5.3" {
