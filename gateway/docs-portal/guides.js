@@ -41,14 +41,17 @@ const guides = {
   },
   ccswitch: {
     title: "CCSwitch",
-    body: () => `<p>CCSwitch 用于在本机统一管理 Claude Code、Codex 等客户端的供应商配置。请先升级到支持自定义 Provider 的版本，再添加皮皮虾 AI 供应商。</p>
-      <p>皮皮虾供应商启用后的实际截图见上方步骤 3。需要手动新增时，使用 CCSwitch 右上角「+」进入配置。</p>
+    body: () => `<p>CCSwitch 用于在本机统一管理 Claude Code、Codex 等客户端的供应商配置。先升级到最新版本，再编辑已导入的皮皮虾 AI 供应商。</p>
+      <p>本页只使用自绘示意，不放真实 API Key、余额、账号名称或本机路径。CCSwitch 的按钮名称可能随版本变化，按含义寻找对应入口。</p>
       <h3>Claude Code</h3>
       <ol><li>在 CCSwitch 顶部选择 <b>Claude</b>，点击右上角“+”，选择<b>自定义配置</b>，供应商名称可填“皮皮虾 AI”。</li><li>Endpoint 填写 <code>${state.baseURL}</code>，<b>不要添加 /v1</b>。</li><li>认证令牌填写您自己的皮皮虾 AI API Key；保存后获取模型列表，模型以控制台可见范围为准。</li><li>启用该供应商后，完全退出再重新打开 Claude Code。</li></ol>
       ${snippet("Claude Endpoint", state.baseURL)}
       <h3>Codex</h3>
-      <ol><li>在 CCSwitch 顶部选择 <b>Codex</b>，点击右上角“+”，选择<b>自定义配置</b>。</li><li>Base URL / Endpoint 填写 <code>${state.baseURL}/v1</code>。</li><li>API Key 填写您自己的皮皮虾 AI API Key，接口协议选择 <b>Responses</b>。</li><li>模型名称以控制台模型列表和您的当前权限为准；CCSwitch 的默认 Codex 示例模型为 <code>gpt-5.5</code>，不可用时请在控制台确认后替换。</li></ol>
+      <ol><li>在 CCSwitch 顶部选择 <b>Codex</b>，找到皮皮虾 AI 供应商，点击铅笔形的<b>编辑</b>入口。</li><li>确认 Base URL / Endpoint 为 <code>${state.baseURL}/v1</code>，接口协议选择 <b>Responses</b>。真实 API Key 只保存在本机配置中。</li><li>进入模型列表，点击<b>获取模型列表</b>刷新当前 Key 的可用模型，不要继续使用旧缓存。</li><li>勾选 <code>gpt-5.6-sol</code>、<code>gpt-5.6-terra</code>、<code>gpt-6-astra</code>、<code>gpt-6.1-sol</code>、<code>gpt-6.1-terra</code> 等 5.6 及以上模型；取消旧模型的勾选，并删除列表中残留的 <code>gpt-5.5</code>。</li><li>保存并应用模型列表。若列表中出现更新的 Terra 版本，优先使用当前 Key 刷新后返回的最新模型名。</li></ol>
       ${snippet("Codex Base URL", `${state.baseURL}/v1`)}
+      <h3>设置默认模型与 Terra</h3>
+      <p>默认模型建议使用 <code>gpt-5.6-sol</code>。在“子代理模型”以及“自动审批模型/自动审批使用模型”等字段中，统一选择当前列表里的最新 Terra；按本次模型列表应为 <code>gpt-6.1-terra</code>。如果 CCSwitch 只显示一个自动审批相关下拉框，也选择同一个最新 Terra。</p>
+      <p>保存前再检查一次：没有选中 <code>gpt-5.5</code>，默认模型和 Terra 模型都来自刚刚刷新过的列表。</p>
       <h3>让 Codex 在项目内调用生图</h3>
       <p>这是推荐方式：CCSwitch 继续使用<b>普通编程分组 Key</b>驱动 Codex；生图分组 Key 只保存在目标项目的本地配置文件里。需要生图时，直接在项目中对 Codex 说“调用皮皮虾生图 Skill 生成一张……”。</p>
       <ol><li>在控制台“API 密钥”额外创建一把 Key，分组选择<b>生图 API 分组</b>。不要改动 CCSwitch 正在使用的编程 Key。</li><li>在需要生图的项目根目录创建 <code>.pipixia-image/config.json</code>，写入下方配置；它只存在于本机项目中。</li><li>把 <code>.pipixia-image/config.json</code> 加入该项目的 <code>.gitignore</code>，随后让 Codex 创建并使用生图 Skill。</li><li>以后只需告诉 Codex 图片需求和保存位置；它通过 Skill 读取本地配置并调用图片生成接口。</li></ol>

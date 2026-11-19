@@ -7,14 +7,15 @@ const restartNotice = () =>
   );
 const originalCCSwitchBody = guides.ccswitch.body;
 guides.ccswitch.body = () =>
-  `<div class="recommended-banner"><span>推荐方式 · 从皮皮虾一键导入</span><strong>打开 API 密钥页面，点击「导入到 CCS」</strong><p>先安装 CCSwitch，再从目标 Key 的操作栏导入。无需优先手填整套供应商配置。</p><div class="doc-actions"><a class="doc-primary" data-console-path="/keys" href="${state.baseURL}/keys" target="_blank" rel="noopener noreferrer">打开 API 密钥页面 ↗</a><a class="doc-secondary" href="https://github.com/farion1231/cc-switch/releases" target="_blank" rel="noopener noreferrer">下载 CCSwitch ↗</a></div></div>
-  <h2>1. 下载并安装 CCSwitch</h2><p>前往 <a href="https://github.com/farion1231/cc-switch/releases" target="_blank" rel="noopener noreferrer">CCSwitch 官方下载页面（GitHub Releases）</a>，选择适合 Windows、macOS 或 Linux 的安装包。安装后先打开一次，让系统注册 CCSwitch 链接的打开方式。</p>
-  <h2>2. 在 API 密钥页面一键导入</h2><p>打开<a data-console-path="/keys" href="${state.baseURL}/keys" target="_blank" rel="noopener noreferrer">皮皮虾 API 密钥页面 ↗</a>，找到准备使用的 Key；没有 Key 时先创建，确认分组、消费来源和模型权限。</p><p>在这行的<strong>操作栏点击「导入到 CCS」</strong>，不是旁边的「使用」按钮。浏览器询问是否打开 CCSwitch 时，允许打开本机应用。</p><figure class="guide-figure"><img src="./assets/ccswitch/import-entry.svg" width="1100" height="450" alt="API 密钥操作栏示意：目标 Key 右侧的导入到 CCS 按钮" loading="lazy"/><figcaption>图 1 · 根据当前项目操作栏绘制的位置示意，非生产账户截图。认准「导入到 CCS」。</figcaption></figure>
-  <p>导入会根据 Key 的平台配置选择目标工具：OpenAI 分组对应 Codex，Anthropic 类分组对应 Claude；部分平台会弹出工具选择。不要为了换工具随意更改原 Key 的分组。</p>${callout("没有弹出 CCSwitch？", "先确认已安装并启动过 CCSwitch，检查浏览器是否阻止打开外部应用。按钮可能受站点设置影响；找不到按钮时联系支持，或使用文末手动配置。导入链接包含 Key，不要复制给他人或发到工单。")}
-  <h2>3. 在 CCSwitch 确认并启用</h2><p>核对导入的供应商名称、地址和目标工具，确认导入后启用皮皮虾供应商。模型名称以<a data-console-path="/model-plaza" href="${state.baseURL}/model-plaza" target="_blank" rel="noopener noreferrer">模型广场 ↗</a>及当前 Key 的可用列表为准；导入默认模型不可用时先核对分组权限。</p><figure class="guide-figure"><img src="./assets/ccswitch/pipixia-provider.webp" width="1966" height="610" alt="皮皮虾 AI 在 CCSwitch Codex 页签中显示为使用中的真实截图" loading="lazy"/><figcaption>图 2 · 皮皮虾 AI 导入后的实际界面：选择 Codex 页签，确认皮皮虾 AI 显示「使用中」。余额为截图当时的数据，以您自己的账户为准。<a href="./assets/ccswitch/pipixia-provider-original.png" target="_blank" rel="noopener noreferrer">查看完整原图 ↗</a></figcaption></figure>
-  <h2>4. 完全退出目标工具，再重新打开</h2>${restartNotice()}
-  <h2>5. 发送简单任务，核对调用记录</h2><p>重新启动后发送一条简单请求，打开<a data-console-path="/usage" href="${state.baseURL}/usage" target="_blank" rel="noopener noreferrer">调用记录 ↗</a>，确认请求、模型和消费来源。仍然 Reconnecting 时按<a href="#codex-connection">连接问题指南</a>检查；有余额却不能使用时查看<a href="#billing">余额与套餐说明</a>。</p>${clientHeadersNotice()}
-  <h2>备用：手动配置与项目生图</h2><p>一键导入不可用，或需要额外配置时再参考下面内容。</p><details class="guide-details"><summary>展开手动配置截图与生图配置</summary><div>${originalCCSwitchBody()}</div></details>`;
+  `<div class="recommended-banner"><span>推荐路径 · 更新后编辑现有供应商</span><strong>刷新模型列表 → 保留 5.6 及以上 → Terra 用最新版本</strong><p>教程使用自绘示意，不展示真实账户、Key、余额或本机路径。已有皮皮虾 AI 供应商直接编辑即可；没有供应商时再从 API 密钥页面导入。</p><div class="doc-actions"><a class="doc-primary" data-console-path="/keys" href="${state.baseURL}/keys" target="_blank" rel="noopener noreferrer">打开 API 密钥页面 ↗</a><a class="doc-secondary" href="https://github.com/farion1231/cc-switch/releases" target="_blank" rel="noopener noreferrer">下载最新 CCSwitch ↗</a></div></div>
+  <h2>1. 更新 CCSwitch</h2><p>前往 <a href="https://github.com/farion1231/cc-switch/releases" target="_blank" rel="noopener noreferrer">CCSwitch 官方 Releases 页面</a>，安装最新版本。更新后重新打开 CCSwitch；如果它仍显示旧界面，完全退出后再启动一次。</p>
+  <h2>2. 打开 Codex 供应商编辑页</h2><ol><li>在顶部切换到 <b>Codex</b>。</li><li>找到正在使用的皮皮虾 AI 供应商，点击卡片右侧的铅笔形<b>编辑</b>按钮。</li><li>确认 API 请求地址是 <code>${state.baseURL}/v1</code>，协议选择 <b>Responses</b>。不要把 API Key 写进教程、截图、工单或 Git。</li></ol>${callout("没有现成供应商？", "先在<a data-console-path=\"/keys\" href=\"${state.baseURL}/keys\" target=\"_blank\" rel=\"noopener noreferrer\">API 密钥页面 ↗</a>创建或选择对应编程分组的 Key，再使用「导入到 CCS」。导入链接包含 Key，只在本机浏览器和 CCSwitch 之间使用。")}
+  <h2>3. 获取模型列表并清理旧模型</h2><p>在编辑页的“模型列表”区域点击<b>获取模型列表</b>，等待当前 Key 的列表刷新。只勾选 5.6 及以上模型；按当前版本可保留 <code>gpt-5.6-sol</code>、<code>gpt-5.6-terra</code>、<code>gpt-6-astra</code>、<code>gpt-6.1-sol</code> 和 <code>gpt-6.1-terra</code>。取消不需要的旧模型，并删除列表中残留的 <code>gpt-5.5</code>。</p><figure class="guide-figure"><img src="./assets/ccswitch/model-selection.svg" width="1100" height="620" alt="自绘示意：刷新模型列表后仅保留 gpt-5.6 及以上模型并移除 gpt-5.5" loading="lazy"/><figcaption>图 1 · 自绘模型选择示意。实际可用模型以当前 Key 刷新后的列表为准。</figcaption></figure><p>点击“应用”或“保存模型列表”，确认 5.5 没有继续出现在已选列表里。</p>
+  <h2>4. 设置默认模型、子代理和自动审批</h2><ol><li>默认模型选择 <code>gpt-5.6-sol</code>。</li><li>“子代理模型”选择当前列表中的最新 Terra，本次应为 <code>gpt-6.1-terra</code>。</li><li>“自动审批模型”“自动审批使用模型”或同义字段也选择 <code>gpt-6.1-terra</code>。如果当前版本只有一个自动审批下拉框，就选择同一个最新 Terra。</li><li>保存供应商并启用它。保存前检查这些字段没有回退到 <code>gpt-5.5</code>。</li></ol><figure class="guide-figure"><img src="./assets/ccswitch/terra-settings.svg" width="1100" height="560" alt="自绘示意：默认模型为 gpt-5.6-sol，子代理和自动审批模型为 gpt-6.1-terra" loading="lazy"/><figcaption>图 2 · 自绘设置示意。字段名称可能随 CCSwitch 版本变化，按含义选择最新 Terra。</figcaption></figure>
+  <h2>5. config.toml 的推荐值</h2><p>如果你通过 CCSwitch 的 Config 视图或本地 <code>~/.codex/config.toml</code> 管理 Codex，可以把主模型和供应商配置整理成下面的结构。真实 Key 由本机认证流程提供，不要粘贴到文档或共享配置。</p>${snippet("config.toml", `model_provider = "custom"\nmodel = "gpt-5.6-sol"\nmodel_reasoning_effort = "high"\ndisable_response_storage = true\nservice_tier = "priority"\n\n[model_providers.custom]\nname = "皮皮虾 AI"\nbase_url = "${state.baseURL}"\nwire_api = "responses"\nrequires_openai_auth = true`)}<p>若 CCSwitch 会自动写入供应商段落，以 CCSwitch 的保存结果为准，不要同时手改多个入口。模型名必须来自刚刷新过的当前 Key 列表。</p>
+  <h2>6. 完全退出 Codex，再重新打开</h2>${restartNotice()}
+  <h2>7. 发送简单任务并核对记录</h2><p>重开后发送一条短请求，确认实际使用的是刚设置的模型。然后打开<a data-console-path="/usage" href="${state.baseURL}/usage" target="_blank" rel="noopener noreferrer">调用记录 ↗</a>，核对模型、请求状态和消费来源。仍然 Reconnecting 时按<a href="#codex-connection">连接问题指南</a>排查。</p>${clientHeadersNotice()}
+  <h2>备用：手动配置与项目生图</h2><p>一键导入不可用，或需要额外配置时再展开下面内容。生图 Key 与编程 Key 分开保存。</p><details class="guide-details"><summary>展开手动配置与项目生图</summary><div>${originalCCSwitchBody()}</div></details>`;
 // Keep the generic manual paths available, but make the recommended path unambiguous.
 for (const id of ["codex", "claude"]) {
   const original = guides[id].body;
@@ -24,7 +25,7 @@ for (const id of ["codex", "claude"]) {
 for (const id of ["ccswitch", "codex", "claude"])
   articles["guide/" + id].body = guides[id].body;
 articles["guide/ccswitch"].description =
-  "安装 CCSwitch → API 密钥页面一键导入 → 启用 → 完全退出并重开 → 验证。";
+  "更新 CCSwitch → 编辑现有供应商 → 刷新模型列表 → 设置最新 Terra → 完全退出并重开。";
 const toolsGroup = articleGroups.find((g) => g.title === "工具接入");
 toolsGroup.items = toolsGroup.items.filter(([id]) => id !== "guide/ccswitch");
 toolsGroup.items.splice(1, 0, ["guide/ccswitch", "CCSwitch · 推荐"]);
@@ -39,7 +40,7 @@ supportGroup.items.splice(supportGroup.items.length - 1, 0, [
 ]);
 const quickstartBody = articles.quickstart.body;
 articles.quickstart.body = () =>
-  `<div class="recommended-banner"><span>推荐路径 · CCSwitch</span><h2>先把工具接好，再开始工作。</h2><p>先在 <a data-console-path="/keys" href="${state.baseURL}/keys" target="_blank" rel="noopener noreferrer">API 密钥页面 ↗</a>点击「导入到 CCS」，在 CCSwitch 确认并启用，<strong>完全退出 Codex / Claude Code，再重新打开</strong>。</p><a class="doc-primary" href="#guide/ccswitch">开始 CCSwitch 图文配置 <span>→</span></a></div>${quickstartBody()}`;
+  `<div class="recommended-banner"><span>推荐路径 · CCSwitch</span><h2>先把工具接好，再开始工作。</h2><p>先更新 CCSwitch，然后编辑 Codex 中现有的皮皮虾 AI 供应商，点击「获取模型列表」，保留 5.6 及以上并把子代理、自动审批设为最新 Terra；保存启用后，<strong>完全退出 Codex / Claude Code，再重新打开</strong>。</p><a class="doc-primary" href="#guide/ccswitch">开始 CCSwitch 图文配置 <span>→</span></a></div>${quickstartBody()}`;
 const supportTemplate = () => `【皮皮虾 AI 排查信息】
 发生时间（含时区）：
 工具及版本（Codex / Claude Code / 其他）：
