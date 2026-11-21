@@ -2175,6 +2175,8 @@ type openAIResponsesWSUsageLogCase struct {
 	apiKeyCredential string
 	// accountRateMultiplier 覆盖账号倍率（利润门测试用）。
 	accountRateMultiplier *float64
+	// midFrameCloseExpected：midPayload 被拒（连接被 1008 关闭），帧不到达上游。
+	midFrameCloseExpected bool
 }
 
 type openAIResponsesWSUsageLogResult struct {
@@ -3569,6 +3571,25 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 		err = clientConn.Write(writeCtx, coderws.MessageText, []byte(payload))
 		cancelWrite()
 		require.NoError(t, err)
+		if tc.midFrameCloseExpected && payload == tc.midPayload {
+			readCtx, cancelRead := context.WithTimeout(context.Background(), 3*time.Second)
+			_, _, readErr := clientConn.Read(readCtx)
+			cancelRead()
+			require.Error(t, readErr, "mid frame should have been rejected with a close")
+			var closeErr coderws.CloseError
+			require.ErrorAs(t, readErr, &closeErr)
+			require.Equal(t, tc.closeStatus, closeErr.Code)
+			require.Contains(t, closeErr.Reason, tc.closeReason)
+			select {
+			case upstreamErr := <-upstreamErrCh:
+				require.Error(t, upstreamErr)
+			case <-time.After(3 * time.Second):
+				t.Fatal("upstream did not observe the rejected WebSocket frame")
+			}
+			require.Empty(t, upstreamInterTurnPayloadCh, "rejected mid frame must not reach upstream")
+			_ = clientConn.CloseNow()
+			return openAIResponsesWSUsageLogResult{}
+		}
 	}
 	for i, payload := range subsequentPayloads {
 		if !writeAndReadTurn(i+2, payload) {

@@ -48,6 +48,7 @@ func TestScopedAdminReviewGroupPriorityAndStatus(t *testing.T) {
 		nil, nil, groups, repo,
 		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, client,
 		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil,
 	)
 	scoped := admin.(service.ScopedAdminAccounts)
 	ctx := context.Background()

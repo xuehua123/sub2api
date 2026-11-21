@@ -1978,6 +1978,7 @@ func newContractDeps(t *testing.T) *contractDeps {
 		nil,
 		nil,
 		nil,
+		nil,
 	)
 	authHandler := handler.NewAuthHandler(cfg, nil, userService, settingService, nil, redeemService, nil, nil)
 	apiKeyHandler := handler.NewAPIKeyHandler(apiKeyService)
