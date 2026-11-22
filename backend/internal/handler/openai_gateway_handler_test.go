@@ -1825,6 +1825,25 @@ func TestOpenAIResponsesWebSocket_CtxPoolAppliesPerTurnMappingAndPreservesReques
 		"BillingModelSourceRequested must use the client model before channel mapping")
 }
 
+func TestOpenAIResponsesWebSocket_CtxPoolMappedTextAliasKeepsTextIntent(t *testing.T) {
+	got := runOpenAIResponsesWebSocketUsageLogCase(t, openAIResponsesWSUsageLogCase{
+		firstPayload:       `{"type":"response.create","model":"gpt-5.6-sol","stream":false}`,
+		secondPayload:      `{"type":"response.create","model":"gpt-image-text-alias","input":"Hello","stream":false}`,
+		group:              wsAllowlistGroup(false),
+		ingressMode:        service.OpenAIWSIngressModeCtxPool,
+		billingModelSource: service.BillingModelSourceUpstream,
+		channelMapping: map[string]string{
+			"gpt-image-text-alias": "gpt-5.6-sol",
+		},
+	})
+
+	require.Len(t, got.upstreamPayloads, 2)
+	require.Equal(t, "gpt-5.6-sol", gjson.GetBytes(got.upstreamPayloads[1], "model").String())
+	require.Len(t, got.logs, 2)
+	require.Equal(t, "gpt-image-text-alias", got.logs[1].RequestedModel)
+	require.Zero(t, got.logs[1].ImageCount)
+}
+
 func TestOpenAIWSTurnBillingModelPreservesImagePricingModel(t *testing.T) {
 	tests := []struct {
 		name             string

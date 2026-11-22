@@ -1,6 +1,9 @@
 package routes
 
 import (
+	"bytes"
+	"compress/gzip"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -156,6 +159,89 @@ func TestGatewayRoutesBOMDoesNotBypassAllowlist(t *testing.T) {
 	router.ServeHTTP(w, req)
 	require.Equal(t, http.StatusNotFound, w.Code, w.Body.String())
 	require.Contains(t, w.Body.String(), "not available for this group")
+}
+
+func TestGatewayRoutesAlphaSearchReusesPrereadBody(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	// Omitting the model lets the handler validate the body without reaching an upstream.
+	const body = `{"commands":{}}`
+	cfg := &config.Config{Gateway: config.GatewayConfig{
+		MaxBodySize:                  1024,
+		TextMaxBodySize:              1024,
+		RequestBodyMemoryBudgetBytes: int64(len(body) + 1), // Enough for one read and its EOF probe.
+	}}
+	router := newAlphaSearchBodyTestRouter(cfg)
+	for _, path := range []string{"/alpha/search", "/v1/alpha/search", "/backend-api/codex/alpha/search"} {
+		t.Run(path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+			require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+			require.Contains(t, w.Body.String(), "model is required")
+		})
+	}
+}
+
+func TestGatewayRoutesAlphaSearchEnforcesDecodedTextBodyLimit(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	const limit = 256
+	router := newAlphaSearchBodyTestRouter(&config.Config{Gateway: config.GatewayConfig{
+		MaxBodySize:     1024,
+		TextMaxBodySize: limit,
+	}})
+
+	for _, tc := range []struct {
+		name         string
+		decodedBytes int
+		wantStatus   int
+		wantMessage  string
+	}{
+		{"at limit", limit, http.StatusBadRequest, "model is required"},
+		{"over limit", limit + 1, http.StatusRequestEntityTooLarge, "limit is 256B"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			const prefix, suffix = `{"query":"`, `"}`
+			body := prefix + strings.Repeat("a", tc.decodedBytes-len(prefix)-len(suffix)) + suffix
+			var compressed bytes.Buffer
+			writer := gzip.NewWriter(&compressed)
+			_, err := io.WriteString(writer, body)
+			require.NoError(t, err)
+			require.NoError(t, writer.Close())
+			require.Less(t, compressed.Len(), limit)
+
+			for _, path := range []string{"/alpha/search", "/v1/alpha/search", "/backend-api/codex/alpha/search"} {
+				req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(compressed.Bytes()))
+				req.Header.Set("Content-Type", "application/json")
+				req.Header.Set("Content-Encoding", "gzip")
+				w := httptest.NewRecorder()
+				router.ServeHTTP(w, req)
+				require.Equal(t, tc.wantStatus, w.Code, "POST %s: %s", path, w.Body.String())
+				require.Contains(t, w.Body.String(), tc.wantMessage, "POST %s", path)
+			}
+		})
+	}
+}
+
+func newAlphaSearchBodyTestRouter(cfg *config.Config) *gin.Engine {
+	openAIGateway := handler.NewOpenAIGatewayHandler(
+		&service.OpenAIGatewayService{}, &service.ConcurrencyService{},
+		&service.BillingCacheService{}, &service.APIKeyService{}, nil, nil, nil, nil, cfg,
+	)
+	group := allowlistGroup(service.PlatformOpenAI, false)
+	groupID := int64(1)
+	apiKey := &service.APIKey{GroupID: &groupID, Group: group}
+	router := gin.New()
+	RegisterGatewayRoutes(router,
+		&handler.Handlers{Gateway: &handler.GatewayHandler{}, OpenAIGateway: openAIGateway, AsyncImage: handler.NewAsyncImageHandler(nil, nil)},
+		servermiddleware.APIKeyAuthMiddleware(func(c *gin.Context) {
+			c.Set(string(servermiddleware.ContextKeyAPIKey), apiKey)
+			c.Set(string(servermiddleware.ContextKeyUser), servermiddleware.AuthSubject{UserID: 1})
+			c.Next()
+		}),
+		nil, nil, nil, nil, nil, cfg,
+	)
+	return router
 }
 
 // 回归：纯文本入口的上限必须在分组中间件读体之前生效，否则中间件会先按通用

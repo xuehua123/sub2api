@@ -25,6 +25,20 @@ const (
 	maxRequestZstdWindowSize = 8 << 20
 )
 
+type decodedRequestBodyLimitKey struct{}
+
+// WithDecodedRequestBodyLimit tightens the decompression limit for this request.
+// Call it before any middleware reads the body. The global ceiling still applies.
+func WithDecodedRequestBodyLimit(ctx context.Context, maxBytes int64) context.Context {
+	if maxBytes <= 0 || maxBytes >= maxDecompressedBodySize {
+		return ctx
+	}
+	if current, _ := ctx.Value(decodedRequestBodyLimitKey{}).(int64); current > 0 && current <= maxBytes {
+		return ctx
+	}
+	return context.WithValue(ctx, decodedRequestBodyLimitKey{}, maxBytes)
+}
+
 // PrereadBody 回填已读取完成的请求体：作为 io.ReadCloser 可被再次顺序消费
 // （multipart 流式解析），同时暴露 Bytes() 让 ReadRequestBodyWithPrealloc
 // 直接返回原始切片，避免二次分配与复制。
@@ -264,13 +278,17 @@ func decompressRequestBodyWithBudget(ctx context.Context, encoding string, raw [
 	default:
 		return requestBodyBuffer{}, errors.New("unsupported Content-Encoding")
 	}
-	decoded, err := readRequestBodyChunksWithBudget(ctx, io.LimitReader(reader, maxDecompressedBodySize+1), requestBodyReadInitCap, -1)
+	maxBytes := int64(maxDecompressedBodySize)
+	if routeLimit, _ := ctx.Value(decodedRequestBodyLimitKey{}).(int64); routeLimit > 0 {
+		maxBytes = min(maxBytes, routeLimit)
+	}
+	decoded, err := readRequestBodyChunksWithBudget(ctx, io.LimitReader(reader, maxBytes+1), requestBodyReadInitCap, -1)
 	if err != nil {
 		return requestBodyBuffer{}, err
 	}
-	if len(decoded.data) > maxDecompressedBodySize {
+	if int64(len(decoded.data)) > maxBytes {
 		decoded.release(ctx)
-		return requestBodyBuffer{}, &http.MaxBytesError{Limit: maxDecompressedBodySize}
+		return requestBodyBuffer{}, &http.MaxBytesError{Limit: maxBytes}
 	}
 	return decoded, nil
 }

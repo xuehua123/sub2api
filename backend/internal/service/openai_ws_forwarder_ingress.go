@@ -471,7 +471,8 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		}
 		// normalized 由 parseClientPayload 中已通过 gjson.ValidBytes 校验的字节派生，
 		// 后续改写只走 sjson 或 decode→json.Marshal，合法性保持，因此跳过重复校验。
-		imageIntent := IsImageGenerationIntentForPlatformValidated(openAIResponsesEndpoint, originalModel, normalized, account.Platform)
+		// Classify the routed model so an alias mapped to a text model stays a text request.
+		imageIntent := IsImageGenerationIntentForPlatformValidated(openAIResponsesEndpoint, routedModel, normalized, account.Platform)
 		if imageIntent && !imageGenerationAllowed {
 			return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, ImageGenerationPermissionMessage(), nil)
 		}

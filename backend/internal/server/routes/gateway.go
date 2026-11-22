@@ -31,21 +31,23 @@ func RegisterGatewayRoutes(
 ) {
 	bodyMemoryBudget := pkghttputil.NewBodyMemoryBudget(cfg.Gateway.RequestBodyMemoryBudgetBytes)
 	bodyLimit := middleware.RequestBodyLimit(cfg.Gateway.MaxBodySize, bodyMemoryBudget)
-	textBodyLimit := middleware.RequestBodyLimit(cfg.Gateway.TextMaxBodySize, bodyMemoryBudget)
+	textMaxBodySize := cfg.Gateway.TextMaxBodySize
+	textBodyLimit := middleware.RequestBodyLimit(textMaxBodySize, bodyMemoryBudget)
+	alphaSearchBodyLimit := func(c *gin.Context) {
+		c.Request = c.Request.WithContext(pkghttputil.WithDecodedRequestBodyLimit(c.Request.Context(), textMaxBodySize))
+		textBodyLimit(c)
+	}
 	// 分组链上的中间件（白名单、字段歧义检查、合成路由）会在 handler 之前读完
 	// 请求体，路由级的上限来不及生效；纯文本入口的上限必须在分组层按路由选择。
-	textBodyRoutes := map[string]bool{
-		"/v1/systemone":                   true,
-		"/v1/alpha/search":                true,
-		"/v1/embeddings":                  true,
-		"/backend-api/codex/alpha/search": true,
-	}
 	groupBodyLimit := func(c *gin.Context) {
-		if textBodyRoutes[c.FullPath()] {
+		switch c.FullPath() {
+		case "/v1/alpha/search", "/backend-api/codex/alpha/search":
+			alphaSearchBodyLimit(c)
+		case "/v1/systemone", "/v1/embeddings":
 			textBodyLimit(c)
-			return
+		default:
+			bodyLimit(c)
 		}
-		bodyLimit(c)
 	}
 	clientRequestID := middleware.ClientRequestID()
 	opsErrorLogger := handler.OpsErrorLoggerMiddleware(opsService)
@@ -266,7 +268,7 @@ func RegisterGatewayRoutes(
 			}
 			h.Gateway.Responses(c)
 		}))
-		gateway.POST("/alpha/search", textBodyLimit, channelMonitorProbe, h.OpenAIGateway.AlphaSearch)
+		gateway.POST("/alpha/search", channelMonitorProbe, h.OpenAIGateway.AlphaSearch)
 		gateway.GET("/responses", func(c *gin.Context) {
 			h.OpenAIGateway.ResponsesWebSocket(c)
 		})
@@ -419,7 +421,7 @@ func RegisterGatewayRoutes(
 	}
 	rootRoute(http.MethodPost, "/responses", bodyLimit, responsesHandler)
 	rootRoute(http.MethodPost, "/responses/*subpath", bodyLimit, guardResponsesSubpath(responsesHandler))
-	rootRoute(http.MethodPost, "/alpha/search", textBodyLimit, h.OpenAIGateway.AlphaSearch)
+	rootRoute(http.MethodPost, "/alpha/search", alphaSearchBodyLimit, h.OpenAIGateway.AlphaSearch)
 	rootRoute(http.MethodGet, "/responses", bodyLimit, func(c *gin.Context) {
 		h.OpenAIGateway.ResponsesWebSocket(c)
 	})
@@ -433,7 +435,7 @@ func RegisterGatewayRoutes(
 		codexDirect.GET("/:call_id", h.OpenAIGateway.LiveSideband)
 		codexDirect.POST("/responses", channelMonitorProbe, responsesHandler)
 		codexDirect.POST("/responses/*subpath", channelMonitorProbe, guardResponsesSubpath(responsesHandler))
-		codexDirect.POST("/alpha/search", textBodyLimit, channelMonitorProbe, h.OpenAIGateway.AlphaSearch)
+		codexDirect.POST("/alpha/search", channelMonitorProbe, h.OpenAIGateway.AlphaSearch)
 		codexDirect.GET("/responses", func(c *gin.Context) {
 			h.OpenAIGateway.ResponsesWebSocket(c)
 		})
