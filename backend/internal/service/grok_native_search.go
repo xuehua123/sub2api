@@ -49,7 +49,7 @@ func (s *OpenAIGatewayService) DoGrokNativeResponsesJSON(ctx context.Context, ac
 	// onto the account-aware Grok service.
 	upstreamReq.Header.Set("Accept", "application/json")
 	applyGrokCLIHeaders(upstreamReq.Header)
-	account.ApplyHeaderOverrides(upstreamReq.Header)
+	account.ApplyHeaderOverrides(upstreamReq.Context(), upstreamReq.Header)
 	upstreamReq = upstreamReq.WithContext(ContextWithAccountUpstreamPolicy(upstreamReq.Context(), account))
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {

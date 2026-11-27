@@ -192,7 +192,9 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 
 	// 账号级请求头覆写（仅 openai api_key 账号启用时生效；OAuth 路径 no-op）。
 	// 覆盖所有 WS 模式（ctx_pool/dedicated/passthrough）的握手头。
-	account.ApplyHeaderOverrides(headers)
+	// 握手头是连接级的：按连接作用域解析变量（不含 request_id），连接池再按
+	// 上报身份分桶（见 normalizeOpenAIWSHandshakeCompatibility）。
+	account.ApplyHeaderOverrides(withHeaderOverrideConnectionScope(ctx), headers)
 	// 与 HTTP 出站保持一致：账号覆写可以改写 x-codex-beta-features，但原生
 	// compaction_trigger 已经是本轮启用 v2 的实锤，必须在覆写后重新补回。
 	// 否则首帧会建立一个未协商 v2 的 WS 连接，后续压缩只能被安全拒绝。

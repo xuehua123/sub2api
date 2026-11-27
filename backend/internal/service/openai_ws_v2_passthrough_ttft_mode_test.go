@@ -167,7 +167,8 @@ func runOpenAIWSPassthroughTTFTModeCase(t *testing.T, mode string) {
 		expected := openAIWSTTFTModeHTTPExpectedMs(t, turn, mode)
 		require.NotNil(t, result.FirstTokenMs, "turn %d must record first token", i+1)
 		got := time.Duration(*result.FirstTokenMs) * time.Millisecond
-		require.GreaterOrEqual(t, got, expected, "turn %d first token must not precede the SSE first-token event", i+1)
+		// FirstTokenMs stores whole milliseconds and truncates the measured duration.
+		require.GreaterOrEqual(t, got, expected-time.Millisecond, "turn %d first token must not precede the SSE first-token event", i+1)
 		require.Less(t, got, expected+tolerance, "turn %d first token must match the SSE rule for mode %s", i+1, mode)
 	}
 	_ = clientConn.Close(coderws.StatusNormalClosure, "done")
