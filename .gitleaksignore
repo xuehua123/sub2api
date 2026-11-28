@@ -257,3 +257,6 @@ worktree/backend/internal/payment/provider/alipay_test.go:generic-api-key:68
 # v0.2.26 memory-retention test uses a synthetic repeated-x payload, not a credential.
 index/backend/internal/service/openai_opencode_session_test.go:generic-api-key:226
 worktree/backend/internal/service/openai_opencode_session_test.go:generic-api-key:226
+
+# Upstream v0.2.26 memory-retention fixture: synthetic repeated-x request body.
+85cf1143326b8f6d4b9d3fd17b24b1b955e14de4:backend/internal/service/openai_opencode_session_test.go:generic-api-key:225
