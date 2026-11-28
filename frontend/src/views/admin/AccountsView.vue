@@ -545,7 +545,7 @@
       @close="showRateMultiplierPriorityConfig = false"
       @save="saveRateMultiplierPrioritySettings"
     />
-    <CreateAccountModal :show="showCreate" :proxies="proxies" :groups="visibleAccountGroups" @close="showCreate = false" @created="reload" />
+    <CreateAccountModal :show="showCreate" :proxies="proxies" :groups="visibleAccountGroups" @close="showCreate = false" @created="handleAccountsCreated" />
     <EditAccountModal :show="showEdit" :account="edAcc" :proxies="proxies" :groups="editAccountGroups" @close="showEdit = false" @updated="handleAccountUpdated" />
     <ReAuthAccountModal :show="showReAuth" :account="reAuthAcc" @close="closeReAuthModal" @reauthorized="handleAccountUpdated" />
     <AccountTestModal :show="showTest" :account="testingAcc" @close="closeTestModal" />
@@ -771,6 +771,36 @@ const showTest = ref(false)
 const showStats = ref(false)
 const showErrorPassthrough = ref(false)
 const showTLSFingerprintProfiles = ref(false)
+
+// Proxy account counts change whenever accounts are created, deleted, imported
+// or rebound, so reload them each time a proxy-picking dialog opens. Only a
+// response newer than the last applied one is used, so a slow older response
+// never overwrites fresher counts, while a failed newer request does not
+// discard an older success; a failed refresh keeps the previous list.
+let proxiesLoadSeq = 0
+let proxiesAppliedSeq = 0
+const loadProxies = async (): Promise<void> => {
+  const seq = ++proxiesLoadSeq
+  try {
+    const list: AccountProxy[] = await adminAPI.proxies.getAllWithCount()
+    if (seq > proxiesAppliedSeq) {
+      proxiesAppliedSeq = seq
+      proxies.value = list
+    }
+  } catch (error: unknown) {
+    console.error('Failed to load proxies:', error)
+  }
+}
+watch([showCreate, showEdit, showBulkEdit], (open: boolean[], wasOpen: boolean[] | undefined) => {
+  if (open.some((isOpen: boolean, i: number) => isOpen && !wasOpen?.[i])) void loadProxies()
+})
+// Batch creation can partially succeed and keep the dialog open for the
+// remaining items, so refresh counts on every successful creation too.
+const handleAccountsCreated = (): void => {
+  void reload()
+  void loadProxies()
+}
+
 const edAcc = ref<Account | null>(null)
 const tempUnschedAcc = ref<Account | null>(null)
 const deletingAcc = ref<Account | null>(null)
@@ -3130,16 +3160,11 @@ onMounted(async () => {
   // not delay group-name rendering for the already-fetched compact rows.
   await load()
   if (!isViewActive) return
-  const [proxyResult, groupResult] = await Promise.allSettled([
-    adminAPI.proxies.getAll(),
+  const [, groupResult] = await Promise.allSettled([
+    loadProxies(),
     adminAPI.groups.getAll()
   ])
   if (!isViewActive) return
-  if (proxyResult.status === 'fulfilled') {
-    proxies.value = proxyResult.value
-  } else {
-    console.error('Failed to load proxies:', proxyResult.reason)
-  }
   if (groupResult.status === 'fulfilled') {
     groups.value = groupResult.value
   } else {

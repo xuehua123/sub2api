@@ -662,6 +662,10 @@ func parseSSEUsagePassthroughWithOptions(data string, usage *ClaudeUsage, cached
 			usage.InputTokens = int(msgUsage.Get("input_tokens").Int())
 			shouldNormalizeCachedInput = msgUsage.Get("input_tokens").Exists()
 			usage.CacheReadInputTokens = int(msgUsage.Get("cache_read_input_tokens").Int())
+			// 与通用解析一致：保留 message_start 已上报的输出用量，message_delta 的累计值随后覆盖。
+			if v := msgUsage.Get("output_tokens").Int(); v > 0 {
+				usage.OutputTokens = int(v)
+			}
 
 			mergeRawAnthropicCacheCreationUsage(msgUsage, usage)
 		}

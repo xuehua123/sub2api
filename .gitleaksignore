@@ -253,3 +253,7 @@ index/README_CN.md:curl-auth-header:746
 worktree/README_CN.md:curl-auth-header:746
 index/backend/internal/payment/provider/alipay_test.go:generic-api-key:68
 worktree/backend/internal/payment/provider/alipay_test.go:generic-api-key:68
+
+# v0.2.26 memory-retention test uses a synthetic repeated-x payload, not a credential.
+index/backend/internal/service/openai_opencode_session_test.go:generic-api-key:226
+worktree/backend/internal/service/openai_opencode_session_test.go:generic-api-key:226

@@ -49,6 +49,8 @@ const messages: Record<string, string> = {
   'admin.dashboard.day': 'Day',
   'admin.dashboard.hour': 'Hour',
   'admin.usage.failedToLoadUser': 'Failed to load user',
+  'admin.usage.user': 'User',
+  'admin.usage.username': 'Username',
   'admin.usage.billingSource.entitlement_balance_fallback': 'Entitlement Overage Balance Fallback',
   'admin.usage.billingSource.label': 'Billing Source',
   'admin.usage.entitlementId': 'Entitlement ID',
@@ -960,6 +962,7 @@ describe('admin UsageView model audit export', () => {
       items: [{
         id: 1,
         created_at: '2026-08-04T00:00:00Z',
+        user: { id: 7, email: 'alice@test.com', username: 'Alice' },
         model: 'gpt-5.6-sol',
         upstream_model: 'gpt-5.5',
         upstream_response_model: 'gpt-5.4',
@@ -1005,14 +1008,16 @@ describe('admin UsageView model audit export', () => {
     )
 
     const headers = aoaToSheetMock.mock.calls[0][0][0]
-    expect(headers.slice(4, 8)).toEqual([
+    expect(headers.slice(1, 3)).toEqual(['User', 'Username'])
+    expect(headers.slice(5, 9)).toEqual([
       'Requested model',
       'Sent upstream model',
       'Upstream response model',
       'Upstream model mismatch',
     ])
     const row = sheetAddAoaMock.mock.calls[0][1][0]
-    expect(row.slice(4, 8)).toEqual(['gpt-5.6-sol', 'gpt-5.5', 'gpt-5.4', 'Yes'])
+    expect(row.slice(1, 3)).toEqual(['alice@test.com', 'Alice'])
+    expect(row.slice(5, 9)).toEqual(['gpt-5.6-sol', 'gpt-5.5', 'gpt-5.4', 'Yes'])
     expect(saveAsMock).toHaveBeenCalledTimes(1)
   })
 })
